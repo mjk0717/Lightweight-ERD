@@ -168,15 +168,22 @@ function unmarkFkIfUnused(entityId: string, colIds: string[], excludeRelationId:
 // first column); retargeting the child (source) end finds-or-creates FK
 // column(s) on the new entity for the existing target column(s), then
 // un-flags the old entity's columns if nothing else still uses them.
-function retargetEnd(relationId: string, end: 'source' | 'target', newEntityId: string): void {
+// explicitColumnId is set when the drag was dropped on a specific column
+// row (rather than just somewhere on the entity) - lets the endpoint be
+// re-pointed to a different column on the SAME entity too, not only to a
+// different entity. Dropping on a specific row always collapses the
+// relation to that single column pair, even if it was previously composite
+// - there's no way to express "re-map all N pairs" through one drop point.
+function retargetEnd(relationId: string, end: 'source' | 'target', newEntityId: string, explicitColumnId?: string): void {
   const relation = state.getRelation(relationId);
   if (!relation) return;
   const newEntity = state.getEntity(newEntityId);
   if (!newEntity) return;
 
   if (end === 'target') {
-    if (newEntityId === relation.targetEntityId) return;
-    const newTargetCols = defaultKeyColumns(newEntity);
+    const newTargetCols: Column[] = explicitColumnId
+      ? [newEntity.columns.find((c) => c.id === explicitColumnId)].filter((c): c is Column => !!c)
+      : defaultKeyColumns(newEntity);
     if (!newTargetCols.length) { window.alert(newEntity.name + ' has no columns to reference.'); return; }
 
     const oldSourceColIds = relation.columnPairs.map((p) => p.sourceColumnId);
@@ -188,16 +195,24 @@ function retargetEnd(relationId: string, end: 'source' | 'target', newEntityId: 
     state.updateRelation(relationId, { targetEntityId: newEntityId, columnPairs: newPairs });
     unmarkFkIfUnused(relation.sourceEntityId, oldSourceColIds, relationId);
   } else {
-    if (newEntityId === relation.sourceEntityId) return;
     const targetEntity = state.getEntity(relation.targetEntityId);
     if (!targetEntity) return;
 
     const oldSourceEntityId = relation.sourceEntityId;
     const oldSourceColIds = relation.columnPairs.map((p) => p.sourceColumnId);
-    const newPairs: RelationColumnPair[] = relation.columnPairs.map((p) => {
-      const tCol = state.getColumn(relation.targetEntityId, p.targetColumnId)!;
-      return { sourceColumnId: findOrCreateFkColumn(newEntityId, tCol, targetEntity.name), targetColumnId: p.targetColumnId };
-    });
+    let newPairs: RelationColumnPair[];
+    if (explicitColumnId) {
+      const explicitCol = newEntity.columns.find((c) => c.id === explicitColumnId);
+      const tCol = state.getColumn(relation.targetEntityId, relation.columnPairs[0].targetColumnId);
+      if (!explicitCol || !tCol) return;
+      state.updateColumn(newEntityId, explicitColumnId, { fk: true });
+      newPairs = [{ sourceColumnId: explicitColumnId, targetColumnId: tCol.id }];
+    } else {
+      newPairs = relation.columnPairs.map((p) => {
+        const tCol = state.getColumn(relation.targetEntityId, p.targetColumnId)!;
+        return { sourceColumnId: findOrCreateFkColumn(newEntityId, tCol, targetEntity.name), targetColumnId: p.targetColumnId };
+      });
+    }
     if (state.relationExistsWithPairs(newPairs)) return;
     state.updateRelation(relationId, { sourceEntityId: newEntityId, columnPairs: newPairs });
     unmarkFkIfUnused(oldSourceEntityId, oldSourceColIds, relationId);

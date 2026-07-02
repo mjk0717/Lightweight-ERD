@@ -363,7 +363,11 @@ function onHandleMouseDown(e: MouseEvent): void {
     const dropEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
     const entityNode = dropEl && closest(dropEl, (el) => el.classList && el.classList.contains('entity'));
     if (!entityNode) return;
-    relationInteraction.retargetEnd(relationId, end, entityNode.dataset.entityId!);
+    // Dropping on a specific column row re-points to that exact column,
+    // even within the same entity - not just to a different entity.
+    const rowNode = dropEl && closest(dropEl, (el) => el.classList && el.classList.contains('entity-row'));
+    const explicitColumnId = rowNode ? rowNode.dataset.colId : undefined;
+    relationInteraction.retargetEnd(relationId, end, entityNode.dataset.entityId!, explicitColumnId);
   }
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
