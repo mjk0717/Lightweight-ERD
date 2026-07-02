@@ -71,6 +71,8 @@ body { display: flex; flex-direction: column; }
   overflow: visible;
 }
 #relation-svg .relation-hit { pointer-events: stroke; cursor: pointer; }
+#relation-svg .relation-handle { pointer-events: all; cursor: grab; }
+#relation-svg .relation-handle:active { cursor: grabbing; }
 #relation-svg .relation-label-text {
   font: 11px "Segoe UI", Arial, sans-serif;
   fill: #1e293b;

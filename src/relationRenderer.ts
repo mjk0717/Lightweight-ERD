@@ -4,6 +4,8 @@ import { closest } from './util';
 import { entityRenderer } from './entityRenderer';
 import { modalRelation } from './modalRelation';
 import { contextMenu } from './contextMenu';
+import { viewport } from './viewport';
+import { relationInteraction } from './relationInteraction';
 import { sourceCardinalityOf, targetCardinalityOf } from './cardinality';
 import { Box, Cardinality, Point, Relation } from './types';
 
@@ -196,6 +198,7 @@ function buildRelationNode(relation: Relation): SVGGElement {
   g.appendChild(el('path', { class: 'relation-hit' }));
   g.appendChild(el('path', { class: 'relation-line' }));
   g.appendChild(el('g', { class: 'relation-endpoints' }));
+  g.appendChild(el('g', { class: 'relation-handles' }));
   const label = el('g', { class: 'relation-label' });
   label.appendChild(el('rect', { class: 'relation-label-bg' }));
   label.appendChild(el('text', { class: 'relation-label-text' }));
@@ -244,6 +247,22 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
   endpoints.innerHTML = '';
   endpoints.appendChild(cardinalityMarker(geom.aPt, geom.aSide, sourceCardinalityOf(relation)));
   endpoints.appendChild(cardinalityMarker(geom.bPt, geom.bSide, targetCardinalityOf(relation)));
+
+  // Endpoint drag handles - only shown once the relation is selected, so
+  // they don't clutter the diagram; dragging one re-points that end to a
+  // different entity (see onHandleMouseDown).
+  const handles = node.querySelector('.relation-handles') as SVGGElement;
+  handles.innerHTML = '';
+  if (isSelected) {
+    handles.appendChild(el('circle', {
+      class: 'relation-handle', 'data-end': 'source', cx: geom.aPt.x, cy: geom.aPt.y, r: 6,
+      fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
+    }));
+    handles.appendChild(el('circle', {
+      class: 'relation-handle', 'data-end': 'target', cx: geom.bPt.x, cy: geom.bPt.y, r: 6,
+      fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
+    }));
+  }
 
   const labelGroup = node.querySelector('.relation-label') as SVGGElement;
   const text = labelGroup.querySelector('.relation-label-text') as SVGTextElement;
@@ -305,6 +324,38 @@ function clearTempLine(): void {
   tempGroup.innerHTML = '';
 }
 
+// Dragging an endpoint handle re-points that end of an already-created
+// relation to a different entity, rather than only being settable when the
+// relation is first drawn.
+function onHandleMouseDown(e: MouseEvent): void {
+  const handle = closest(e.target as HTMLElement, (n) => n.classList && n.classList.contains('relation-handle'));
+  if (!handle) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const g = closest(handle, (n) => n.classList && n.classList.contains('relation'))!;
+  const relationId = g.dataset.relationId!;
+  const end = handle.dataset.end as 'source' | 'target';
+  const otherHandle = g.querySelector('.relation-handle[data-end="' + (end === 'source' ? 'target' : 'source') + '"]') as SVGCircleElement | null;
+  if (!otherHandle) return;
+  const fixedPt = { x: Number(otherHandle.getAttribute('cx')), y: Number(otherHandle.getAttribute('cy')) };
+
+  function onMove(ev: MouseEvent): void {
+    setTempLine(fixedPt, viewport.screenToWorld(ev.clientX, ev.clientY));
+  }
+  function onUp(ev: MouseEvent): void {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    clearTempLine();
+    const dropEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+    const entityNode = dropEl && closest(dropEl, (el) => el.classList && el.classList.contains('entity'));
+    if (!entityNode) return;
+    relationInteraction.retargetEnd(relationId, end, entityNode.dataset.entityId!);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
 function onClick(e: MouseEvent): void {
   const g = closest(e.target as HTMLElement, (n) => n.classList && n.classList.contains('relation'));
   if (!g) return;
@@ -334,6 +385,7 @@ function init(svg: SVGSVGElement): void {
   tempGroup.style.display = 'none';
   svgEl.appendChild(relGroup);
   svgEl.appendChild(tempGroup);
+  svgEl.addEventListener('mousedown', onHandleMouseDown as EventListener);
   svgEl.addEventListener('click', onClick as EventListener);
   svgEl.addEventListener('dblclick', onDblClick as EventListener);
   svgEl.addEventListener('contextmenu', onContextMenu as EventListener);
