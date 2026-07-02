@@ -177,7 +177,29 @@ function angularPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSid
   return { d: 'M ' + pts.map((p) => p.x + ' ' + p.y).join(' L '), mid };
 }
 
-function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
+// Self-referencing (hierarchical) relations attach both ends to the same
+// edge, which makes the normal curved/angular routing look wrong - both
+// ends push out in the same direction, producing a flattened, kinked shape
+// rather than a clean loop. Drawn as an exception: a proper circular arc
+// bulging out from the edge, regardless of the current line-style setting.
+function selfLoopPath(aPt: Point, bPt: Point, side: AnchorSide) {
+  const markerA = markerAnchor(aPt, side);
+  const markerB = markerAnchor(bPt, side);
+  const chord = Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y);
+  const r = Math.max(chord / 2, 40);
+  const dir = sideDir(side);
+  const chordMidX = (markerA.x + markerB.x) / 2, chordMidY = (markerA.y + markerB.y) / 2;
+  return {
+    d: 'M ' + aPt.x + ' ' + aPt.y +
+      ' L ' + markerA.x + ' ' + markerA.y +
+      ' A ' + r + ' ' + r + ' 0 1 1 ' + markerB.x + ' ' + markerB.y +
+      ' L ' + bPt.x + ' ' + bPt.y,
+    mid: { x: chordMidX + dir.x * r, y: chordMidY + dir.y * r }
+  };
+}
+
+function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, isSelf: boolean) {
+  if (isSelf) return selfLoopPath(aPt, bPt, aSide);
   return state.data.lineStyle === 'angular' ? angularPath(aPt, aSide, bPt, bSide) : bezierPath(aPt, aSide, bPt, bSide);
 }
 
@@ -294,8 +316,9 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
   const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, firstPair.targetColumnId);
   if (!aRow || !bRow) { node.style.display = 'none'; return; }
 
-  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, relation.sourceEntityId === relation.targetEntityId, relation.sourceAnchor, relation.targetAnchor);
-  const path = linePath(geom.aPt, geom.aSide, geom.bPt, geom.bSide);
+  const isSelf = relation.sourceEntityId === relation.targetEntityId;
+  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, isSelf, relation.sourceAnchor, relation.targetAnchor);
+  const path = linePath(geom.aPt, geom.aSide, geom.bPt, geom.bSide, isSelf);
 
   const selected = state.data.selected;
   const isSelected = !!(selected && selected.type === 'relation' && selected.id === relation.id);
@@ -391,7 +414,7 @@ function setTempLine(fromPt: Point, toPt: Point): void {
   tempGroup.innerHTML = '';
   const side = toPt.x >= fromPt.x ? 'right' : 'left';
   const otherSide = side === 'right' ? 'left' : 'right';
-  const path = linePath(fromPt, side, toPt, otherSide);
+  const path = linePath(fromPt, side, toPt, otherSide, false);
   const p = el('path', { d: path.d, fill: 'none', stroke: theme.colors.relationStrokeHover, 'stroke-width': 2, 'stroke-dasharray': '5,4' });
   tempGroup.appendChild(p);
 }

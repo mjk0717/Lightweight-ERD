@@ -4,7 +4,6 @@ import { nextId, closest, escapeHtml, clamp } from './util';
 import { entityRenderer } from './entityRenderer';
 import { relationRenderer } from './relationRenderer';
 import { modalRelation } from './modalRelation';
-import { modalEntity } from './modalEntity';
 import { modal } from './modal';
 import { theme } from './theme';
 import { Cardinality, Column, FkPlan, Relation, RelationColumnPair } from './types';
@@ -188,9 +187,9 @@ function start(entityId: string, startEvent: MouseEvent): void {
     relationRenderer.clearTempLine();
 
     if (!dragging) {
-      // A plain click on the body (no real drag) opens the table details
-      // instead of misfiring a self-relation.
-      modalEntity.open(entityId);
+      // A plain click on the body (no real drag) just selects the entity
+      // (already done on mousedown) instead of misfiring a self-relation -
+      // opening the table details now requires a double-click, like the header.
       return;
     }
 
