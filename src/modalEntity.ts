@@ -96,8 +96,8 @@ function renderRow(col: Column, idx: number): HTMLTableRowElement {
     '<td><input type="text" class="f-type" list="oracle-types-datalist" value="' + escapeHtml(col.dataType) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-pk" ' + (col.pk ? 'checked' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-null" ' + (col.nullable ? 'checked' : '') + '></td>' +
-    '<td class="col-check">' + (col.fk ? '<span class="badge-fk">FK</span>' : '') + '</td>' +
-    '<td>' + (col.isSystem ? '<span class="hint">system</span>' : '<button type="button" class="btn-icon btn-del-col" title="Delete column">✕</button>') + '</td>';
+    '<td class="col-check">' + (col.isSystem ? '<span class="badge-system">SYSTEM</span>' : (col.fk ? '<span class="badge-fk">FK</span>' : '')) + '</td>' +
+    '<td>' + (col.isSystem ? '' : '<button type="button" class="btn-icon btn-del-col" title="Delete column">✕</button>') + '</td>';
 
   const nameInput = tr.querySelector('.f-name') as HTMLInputElement | null;
   if (nameInput) {
