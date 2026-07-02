@@ -76,19 +76,17 @@ function parseColumnList(inner: string): string[] {
   return splitTopLevel(inner).map((s) => stripQuotes(s.trim()));
 }
 
-interface CreateTableResult {
-  table: DdlTable;
+interface ClauseListResult {
+  columns: Column[];
+  pkColumnNames: string[];
   inlineFks: DdlFkCandidate[];
 }
 
-function parseCreateTable(stmt: string, tables: DdlTable[]): CreateTableResult | null {
-  const m = stmt.match(/^CREATE\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(/i);
-  if (!m) return null;
-  const tableName = parseQualifiedName(m[1]);
-  const openIdx = stmt.indexOf('(', m[0].length - 1);
-  const group = extractParenGroup(stmt, openIdx);
-  const clauses = splitTopLevel(group.inner);
-
+// Shared by CREATE TABLE's column/constraint list and ALTER TABLE ... ADD
+// (...)'s constraint list - both are just a top-level-comma-separated list
+// of the same clause shapes (column defs, PRIMARY KEY, FOREIGN KEY ...
+// REFERENCES, UNIQUE/CHECK).
+function parseClauseList(clauses: string[], tableName: string): ClauseListResult {
   const columns: Column[] = [];
   const pkColumnNames: string[] = [];
   const inlineFks: DdlFkCandidate[] = [];
@@ -139,6 +137,23 @@ function parseCreateTable(stmt: string, tables: DdlTable[]): CreateTableResult |
     }
   });
 
+  return { columns, pkColumnNames, inlineFks };
+}
+
+interface CreateTableResult {
+  table: DdlTable;
+  inlineFks: DdlFkCandidate[];
+}
+
+function parseCreateTable(stmt: string, tables: DdlTable[]): CreateTableResult | null {
+  const m = stmt.match(/^CREATE\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(/i);
+  if (!m) return null;
+  const tableName = parseQualifiedName(m[1]);
+  const openIdx = stmt.indexOf('(', m[0].length - 1);
+  const group = extractParenGroup(stmt, openIdx);
+  const clauses = splitTopLevel(group.inner);
+  const { columns, pkColumnNames, inlineFks } = parseClauseList(clauses, tableName);
+
   pkColumnNames.forEach((pkName) => {
     const col = columns.find((c) => c.name.toUpperCase() === pkName);
     if (col) { col.pk = true; col.nullable = false; }
@@ -181,6 +196,29 @@ function parseAlterTableFk(stmt: string): DdlFkCandidate | null {
   };
 }
 
+interface AlterTableAddResult {
+  table: string;
+  pkColumnNames: string[];
+  inlineFks: DdlFkCandidate[];
+}
+
+// ALTER TABLE tbl ADD ( <constraint or column clause>, ... ) - Oracle's
+// "add several constraints/columns after the fact" form, e.g.
+//   ALTER TABLE departments2 ADD ( CONSTRAINT dept_id_pk PRIMARY KEY (department_id)
+//     , CONSTRAINT dept_loc_fk FOREIGN KEY (location_id) REFERENCES locations (location_id) );
+// The parenthesized, comma-separated list is the same clause shape as
+// CREATE TABLE's body, so it's parsed with the same parseClauseList().
+function parseAlterTableAddParen(stmt: string): AlterTableAddResult | null {
+  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+ADD\s*\(/i);
+  if (!m) return null;
+  const tableName = parseQualifiedName(m[1]);
+  const openIdx = stmt.indexOf('(', m[0].length - 1);
+  const group = extractParenGroup(stmt, openIdx);
+  const clauses = splitTopLevel(group.inner);
+  const { pkColumnNames, inlineFks } = parseClauseList(clauses, tableName);
+  return { table: tableName, pkColumnNames, inlineFks };
+}
+
 export function parse(rawText: string): DdlParseResult {
   const warnings: string[] = [];
   const text = stripComments(rawText || '');
@@ -209,6 +247,22 @@ export function parse(rawText: string): DdlParseResult {
         const t = tables.find((t) => t.name.toUpperCase() === c.table.toUpperCase());
         const col = t && t.columns.find((col) => col.name.toUpperCase() === c.column.toUpperCase());
         if (col) col.comment = c.comment;
+      }
+      return;
+    }
+    if (/^ALTER\s+TABLE\b\s*(?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?\s+ADD\s*\(/i.test(stmt)) {
+      const res = parseAlterTableAddParen(stmt);
+      if (res) {
+        const t = tables.find((t) => t.name.toUpperCase() === res.table.toUpperCase());
+        if (t) {
+          res.pkColumnNames.forEach((pkName) => {
+            const col = t.columns.find((c) => c.name.toUpperCase() === pkName);
+            if (col) { col.pk = true; col.nullable = false; }
+          });
+        }
+        fkCandidates.push(...res.inlineFks);
+      } else {
+        warnings.push('Unparsed ALTER TABLE ... ADD (...) clause: ' + stmt.slice(0, 80));
       }
       return;
     }
