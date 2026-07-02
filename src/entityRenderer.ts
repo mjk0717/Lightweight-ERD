@@ -58,6 +58,18 @@ function rowClass(col: Column, idx: number): string {
   return cls.join(' ');
 }
 
+// Everything the row markup actually depends on - used to skip rebuilding
+// the body's rows on renders that don't touch columns (e.g. a 'select' or
+// 'move' event). Rebuilding unconditionally on every render replaces the
+// row elements even when nothing about them changed, which - among other
+// things - breaks the browser's native double-click detection, since a
+// dblclick requires the same DOM node to receive both clicks.
+function rowsSignature(entity: Entity): string {
+  return state.data.designMode + '|' + JSON.stringify(entity.columns.map((c) =>
+    [c.id, c.name, c.comment, c.dataType, c.pk, c.fk, c.nullable, c.isSystem]
+  ));
+}
+
 function buildEntityNode(entity: Entity): HTMLElement {
   const node = document.createElement('div');
   node.className = 'entity';
@@ -80,21 +92,25 @@ function updateEntityNode(node: HTMLElement, entity: Entity): void {
   (header.querySelector('.entity-name') as HTMLElement).textContent = displayEntityName(entity);
 
   const body = node.querySelector('.entity-body') as HTMLElement;
-  body.innerHTML = '';
-  entity.columns.forEach((col, idx) => {
-    const row = document.createElement('div');
-    row.className = rowClass(col, idx);
-    row.dataset.colId = col.id;
-    row.dataset.entityId = entity.id;
-    row.title = col.name + ' : ' + col.dataType + ' ' + (col.nullable ? 'NULL' : 'NOT NULL') + (col.comment ? '\n' + col.comment : '');
-    row.innerHTML =
-      '<span class="row-flag">' + rowFlag(col) + '</span>' +
-      '<span class="row-name">' + escapeHtml(displayColumnName(col)) + '</span>' +
-      '<span class="row-type">' + escapeHtml(col.dataType) +
-        (col.nullable ? '' : '<span class="not-null-mark" title="NOT NULL">*</span>') +
-      '</span>';
-    body.appendChild(row);
-  });
+  const sig = rowsSignature(entity);
+  if (body.dataset.rowsSig !== sig) {
+    body.dataset.rowsSig = sig;
+    body.innerHTML = '';
+    entity.columns.forEach((col, idx) => {
+      const row = document.createElement('div');
+      row.className = rowClass(col, idx);
+      row.dataset.colId = col.id;
+      row.dataset.entityId = entity.id;
+      row.title = col.name + ' : ' + col.dataType + ' ' + (col.nullable ? 'NULL' : 'NOT NULL') + (col.comment ? '\n' + col.comment : '');
+      row.innerHTML =
+        '<span class="row-flag">' + rowFlag(col) + '</span>' +
+        '<span class="row-name">' + escapeHtml(displayColumnName(col)) + '</span>' +
+        '<span class="row-type">' + escapeHtml(col.dataType) +
+          (col.nullable ? '' : '<span class="not-null-mark" title="NOT NULL">*</span>') +
+        '</span>';
+      body.appendChild(row);
+    });
+  }
 
   const selected = state.data.selected;
   node.classList.toggle('selected', !!(selected && selected.type === 'entity' && selected.id === entity.id));
