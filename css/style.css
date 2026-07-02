@@ -242,10 +242,29 @@ body { display: flex; flex-direction: column; }
 .ddl-export-fk-toggle { margin-bottom: 10px; font-weight: 600; }
 .ddl-export-grid { display: flex; gap: 14px; align-items: stretch; }
 .ddl-export-list {
-  flex: 0 0 180px; overflow: auto; max-height: 420px;
+  flex: 0 0 230px; overflow: auto; max-height: 420px;
   border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 10px;
 }
+.ddl-export-select-all {
+  font-weight: 600; padding-bottom: 6px; margin-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
 .ddl-export-grid .f-ddl-output { flex: 1 1 0; min-width: 0; height: 420px; margin: 0; }
+.ddl-export-ts-row { align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+.ddl-export-ts-pair {
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 auto; max-width: 100%; min-width: 0;
+}
+.ddl-export-ts-row .f-ddl-owner-input,
+.ddl-export-ts-row .f-ddl-tablespace-input,
+.ddl-export-ts-row .f-ddl-idx-tablespace-input {
+  width: 110px; max-width: 40vw; font-size: 12px; font-family: inherit;
+  box-sizing: border-box; margin: 0; flex: 0 1 auto; min-width: 0;
+}
+.ddl-export-ts-row label {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; margin: 0; flex: 0 0 auto; white-space: nowrap;
+}
 
 /* ---------- ddl import ---------- */
 .f-ddl-text, .f-ddl-file { display: block; width: 100%; margin-top: 8px; }

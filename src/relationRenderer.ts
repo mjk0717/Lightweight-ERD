@@ -263,7 +263,7 @@ function crowFoot(point: Point, side: AnchorSide): SVGGElement {
   const perp = { x: -dir.y, y: dir.x };
   const forward = { x: point.x + dir.x * 12, y: point.y + dir.y * 12 };
   const g = el('g', { class: 'crowfoot' });
-  [-6, 6].forEach((off) => {
+  [-8, 8].forEach((off) => {
     g.appendChild(el('line', {
       x1: point.x + perp.x * off, y1: point.y + perp.y * off, x2: forward.x, y2: forward.y,
       stroke: theme.colors.relationStroke, 'stroke-width': 1.5
@@ -277,7 +277,7 @@ function bar(point: Point, side: AnchorSide, distance: number): SVGLineElement {
   const perp = { x: -dir.y, y: dir.x };
   const cx = point.x + dir.x * distance, cy = point.y + dir.y * distance;
   return el('line', {
-    x1: cx - perp.x * 6, y1: cy - perp.y * 6, x2: cx + perp.x * 6, y2: cy + perp.y * 6,
+    x1: cx - perp.x * 8, y1: cy - perp.y * 8, x2: cx + perp.x * 8, y2: cy + perp.y * 8,
     stroke: theme.colors.relationStroke, 'stroke-width': 1.5
   });
 }
@@ -285,7 +285,7 @@ function bar(point: Point, side: AnchorSide, distance: number): SVGLineElement {
 function circle(point: Point, side: AnchorSide, distance: number): SVGCircleElement {
   const dir = sideDir(side);
   return el('circle', {
-    cx: point.x + dir.x * distance, cy: point.y + dir.y * distance, r: 4,
+    cx: point.x + dir.x * distance, cy: point.y + dir.y * distance, r: 6,
     fill: theme.colors.bodyBg, stroke: theme.colors.relationStroke, 'stroke-width': 1.5
   });
 }

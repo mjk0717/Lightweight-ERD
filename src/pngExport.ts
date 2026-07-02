@@ -88,7 +88,7 @@ function drawCrowFoot(ctx: CanvasRenderingContext2D, point: Point, side: AnchorS
   const dir = sideDir(side);
   const perp = { x: -dir.y, y: dir.x };
   const forward = { x: point.x + dir.x * 12, y: point.y + dir.y * 12 };
-  [-6, 6].forEach((off) => {
+  [-8, 8].forEach((off) => {
     ctx.beginPath();
     ctx.moveTo(point.x + perp.x * off, point.y + perp.y * off);
     ctx.lineTo(forward.x, forward.y);
@@ -101,15 +101,15 @@ function drawBar(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, 
   const perp = { x: -dir.y, y: dir.x };
   const cx = point.x + dir.x * distance, cy = point.y + dir.y * distance;
   ctx.beginPath();
-  ctx.moveTo(cx - perp.x * 6, cy - perp.y * 6);
-  ctx.lineTo(cx + perp.x * 6, cy + perp.y * 6);
+  ctx.moveTo(cx - perp.x * 8, cy - perp.y * 8);
+  ctx.lineTo(cx + perp.x * 8, cy + perp.y * 8);
   ctx.stroke();
 }
 
 function drawCircle(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, distance: number): void {
   const dir = sideDir(side);
   ctx.beginPath();
-  ctx.arc(point.x + dir.x * distance, point.y + dir.y * distance, 4, 0, Math.PI * 2);
+  ctx.arc(point.x + dir.x * distance, point.y + dir.y * distance, 6, 0, Math.PI * 2);
   ctx.fillStyle = theme.colors.bodyBg;
   ctx.fill();
   ctx.stroke();
