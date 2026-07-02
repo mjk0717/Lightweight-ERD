@@ -168,6 +168,11 @@ function start(entityId: string, startEvent: MouseEvent): void {
 
   const startClient = { x: startEvent.clientX, y: startEvent.clientY };
   let dragging = false;
+  // A self (hierarchical) relation only makes sense if the drag actually left
+  // the entity's own bounds and came back - a same-entity start/end without
+  // ever leaving is just a jiggle over the body, not an intent to connect it
+  // to itself.
+  let leftEntity = false;
 
   function onMove(ev: MouseEvent): void {
     if (!dragging) {
@@ -176,6 +181,9 @@ function start(entityId: string, startEvent: MouseEvent): void {
       dragging = true;
     }
     const mouseWorld = viewport.screenToWorld(ev.clientX, ev.clientY);
+    if (mouseWorld.x < box!.x || mouseWorld.x > box!.x + box!.w || mouseWorld.y < box!.y || mouseWorld.y > box!.y + box!.h) {
+      leftEntity = true;
+    }
     const side = mouseWorld.x >= box!.x + box!.w / 2 ? 'right' : 'left';
     const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: anchorYFor(mouseWorld.y) };
     // The far end is just wherever the cursor is - no real entity there yet
@@ -198,10 +206,14 @@ function start(entityId: string, startEvent: MouseEvent): void {
     const targetEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
     const entityNode = targetEl && closest(targetEl, (el) => el.classList && el.classList.contains('entity'));
     if (!entityNode) return;
+    const droppedEntityId = entityNode.dataset.entityId!;
+    // Ending back on the entity you started from only counts if the drag
+    // actually left its bounds first (see leftEntity above) - otherwise do
+    // nothing, same as a plain click.
+    if (droppedEntityId === entityId && !leftEntity) return;
     // Dragging goes parent -> child: the entity you start on is the "one"
     // side being referenced, the entity you drop onto is the "many" side
     // that receives the FK column(s).
-    const droppedEntityId = entityNode.dataset.entityId!;
     modalRelation.openCreate(droppedEntityId, entityId);
   }
 
