@@ -3,6 +3,7 @@ import { modalEntity } from './modalEntity';
 import { modalRelation } from './modalRelation';
 import { relationInteraction } from './relationInteraction';
 import { toolbar } from './toolbar';
+import { ddlExport } from './ddlExport';
 import { ContextMenuItem, Point } from './types';
 
 let menuEl: HTMLElement | null = null;
@@ -41,7 +42,8 @@ function show(items: ContextMenuItem[], x: number, y: number): void {
 
 function showForEntity(entityId: string, x: number, y: number): void {
   show([
-    { label: 'Edit details', onClick: () => modalEntity.open(entityId) },
+    { label: 'Edit Table', onClick: () => modalEntity.open(entityId) },
+    { label: 'Create DDL', onClick: () => ddlExport.open(entityId) },
     { label: 'Delete table', danger: true, onClick: () => state.removeEntity(entityId) }
   ], x, y);
 }

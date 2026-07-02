@@ -150,6 +150,7 @@ body { display: flex; flex-direction: column; }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; border-bottom: 1px solid #e2e8f0;
+  cursor: move; user-select: none;
 }
 .modal-title { font-size: 15px; font-weight: 600; }
 .modal-close { border: none; background: none; font-size: 16px; cursor: pointer; color: #64748b; }
@@ -169,7 +170,7 @@ body { display: flex; flex-direction: column; }
 .modal-footer .btn:hover { background: #cbd5e1; }
 .modal-footer .btn-primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
 .modal-footer .btn-primary:hover { background: #1d4ed8; }
-.modal-footer .btn-danger { background: #fff; color: #b91c1c; border-color: #fecaca; }
+.modal-footer .btn-danger { background: #fff; color: #b91c1c; border-color: #fecaca; margin-right: auto; }
 .modal-footer .btn-danger:hover { background: #fef2f2; }
 
 .hint { color: #94a3b8; font-size: 11px; }
@@ -177,6 +178,16 @@ body { display: flex; flex-direction: column; }
 /* ---------- entity detail modal ---------- */
 .entity-modal-head { display: flex; gap: 14px; margin-bottom: 6px; }
 .entity-modal-head label { flex: 1 1 0; }
+
+.header-color-palette { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.header-color-palette .hint { margin-right: 4px; }
+.color-swatch {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer; padding: 0;
+}
+.color-swatch.selected { border-color: #1e293b; box-shadow: 0 0 0 1px #fff inset; }
+.color-swatch-reset { background: #fff; border: 1px solid #cbd5e1; color: #94a3b8; font-size: 11px; line-height: 18px; }
+.color-swatch-reset.selected { border-color: #1e293b; }
 
 .col-grid { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
 .col-grid th { text-align: left; font-size: 11px; color: #64748b; padding: 4px 6px; border-bottom: 1px solid #e2e8f0; }
@@ -201,6 +212,17 @@ body { display: flex; flex-direction: column; }
 .col-ref-list li { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
 .col-ref-list li:last-child { border-bottom: none; }
 .rel-preview { font-size: 12px; color: #2563eb; background: #eff6ff; border-radius: 4px; padding: 6px 8px; margin-bottom: 10px; }
+.fk-mode-choice { display: flex; gap: 12px; font-size: 12px; margin-bottom: 8px; }
+.fk-mode-choice label { display: flex; align-items: center; gap: 4px; cursor: pointer; font-weight: normal; }
+.target-col-checklist {
+  border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px 8px;
+  max-height: 140px; overflow: auto; margin-bottom: 8px;
+}
+.col-check-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; cursor: pointer; font-weight: normal; }
+.f-existing-col-mapping { margin-bottom: 8px; }
+.f-existing-col-mapping label { display: block; font-size: 12px; margin-bottom: 6px; font-weight: normal; }
+.rel-pairs-readout { margin-bottom: 10px; }
+.rel-pairs-readout .hint { display: block; margin-bottom: 4px; }
 
 /* ---------- system columns modal ---------- */
 .sys-col-grid td, .sys-col-grid th { padding: 4px 6px; }

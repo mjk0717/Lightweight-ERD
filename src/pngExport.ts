@@ -112,16 +112,22 @@ function drawCardinalityMarker(ctx: CanvasRenderingContext2D, point: Point, side
 // Identifying relationship (FK column also part of the child's PK) draws
 // solid; a plain attribute FK (non-identifying) draws dashed.
 function isIdentifying(relation: Relation): boolean {
-  const col = state.getColumn(relation.sourceEntityId, relation.sourceColumnId);
-  return !!col && col.pk;
+  return relation.columnPairs.every((p) => {
+    const col = state.getColumn(relation.sourceEntityId, p.sourceColumnId);
+    return !!col && col.pk;
+  });
 }
 
 function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
   const aBox = entityRenderer.getEntityBox(relation.sourceEntityId);
   const bBox = entityRenderer.getEntityBox(relation.targetEntityId);
   if (!aBox || !bBox) return;
-  const aRow = entityRenderer.getColumnRowCenter(relation.sourceEntityId, relation.sourceColumnId);
-  const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, relation.targetColumnId);
+  // A composite (multi-column) FK still draws as a single line - anchored
+  // on the first column pair's rows.
+  const firstPair = relation.columnPairs[0];
+  if (!firstPair) return;
+  const aRow = entityRenderer.getColumnRowCenter(relation.sourceEntityId, firstPair.sourceColumnId);
+  const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, firstPair.targetColumnId);
   if (!aRow || !bRow) return;
 
   const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, relation.sourceEntityId === relation.targetEntityId);
@@ -169,7 +175,7 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
 
 function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
   const box = entityRenderer.getEntityBox(entity.id)!;
-  ctx.fillStyle = theme.colors.headerBg;
+  ctx.fillStyle = entity.headerColor || theme.colors.headerBg;
   ctx.fillRect(box.x, box.y, box.w, theme.headerHeight);
   ctx.fillStyle = theme.colors.headerText;
   ctx.font = 'bold 13px ' + theme.fontFamily;

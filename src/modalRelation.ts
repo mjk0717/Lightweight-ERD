@@ -12,23 +12,35 @@ function cardinalitySelectHtml(className: string, selected: Cardinality): string
   return '<label>Cardinality<br><select class="' + className + '">' + options + '</select></label>';
 }
 
-function pkOrFirst(entity: Entity): Column | null {
-  return entity.columns.find((c) => c.pk) || entity.columns[0] || null;
+// Which of the target entity's columns get pre-checked as the referenced
+// key: its PK columns (composite or single), falling back to the first
+// column if it has no PK defined at all.
+function defaultTargetColumnIds(entity: Entity): string[] {
+  const pks = entity.columns.filter((c) => c.pk);
+  if (pks.length) return pks.map((c) => c.id);
+  return entity.columns[0] ? [entity.columns[0].id] : [];
 }
 
-function columnListHtml(entity: Entity): string {
-  if (!entity.columns.length) return '<div class="hint">(no columns)</div>';
-  return '<ul class="col-ref-list">' + entity.columns.map((c) => {
-    const flag = c.pk ? 'PK' : (c.fk ? 'FK' : '');
-    return '<li>' + (flag ? '<b>' + flag + '</b> ' : '') + escapeHtml(c.name) + ' <span class="hint">' + escapeHtml(c.dataType) + '</span></li>';
-  }).join('') + '</ul>';
-}
-
-function previewText(sourceEntity: Entity, targetColumn: Column | null, targetEntityName: string): string {
-  if (!targetColumn) return '';
+function previewLine(sourceEntity: Entity, targetColumn: Column, targetEntityName: string): string {
   const plan = relationInteraction.planFkColumn(sourceEntity.id, targetColumn, targetEntityName);
-  if (!plan.isNew) return 'Existing column "' + plan.name + '" on ' + sourceEntity.name + ' will be marked as FK.';
-  return 'New FK column "' + plan.name + '" (' + targetColumn.dataType + ') will be added to ' + sourceEntity.name + '.';
+  if (!plan.isNew) return 'Existing column "' + plan.name + '" on ' + sourceEntity.name + ' will be marked as FK and join its primary key.';
+  return 'New FK column "' + plan.name + '" (' + targetColumn.dataType + ') will be added to ' + sourceEntity.name + ' as part of its primary key.';
+}
+
+function targetChecklistHtml(entity: Entity, checkedIds: string[]): string {
+  return entity.columns.map((c) => {
+    const flag = c.pk ? ' (PK)' : '';
+    const checked = checkedIds.indexOf(c.id) !== -1 ? ' checked' : '';
+    return '<label class="col-check-row"><input type="checkbox" class="f-target-col-check" value="' + c.id + '"' + checked + '> ' +
+      escapeHtml(c.name + flag + ' - ' + c.dataType) + '</label>';
+  }).join('');
+}
+
+function existingColumnSelectHtml(entity: Entity): string {
+  return entity.columns.map((c) => {
+    const flag = c.pk ? ' (PK)' : (c.fk ? ' (FK)' : '');
+    return '<option value="' + c.id + '">' + escapeHtml(c.name + flag + ' - ' + c.dataType) + '</option>';
+  }).join('');
 }
 
 function openCreate(sourceEntityId: string, targetEntityId: string): void {
@@ -41,14 +53,18 @@ function openCreate(sourceEntityId: string, targetEntityId: string): void {
   }
 
   const body = document.createElement('div');
-  const defaultTarget = pkOrFirst(targetEntity);
   body.innerHTML =
     '<div class="rel-modal-grid">' +
       '<div><h4>' + escapeHtml(targetEntity.name) + ' <span class="hint">(one)</span></h4>' +
-        '<label>Referenced column<br><select class="f-target-col"></select></label>' +
+        '<div class="target-col-checklist">' + targetChecklistHtml(targetEntity, defaultTargetColumnIds(targetEntity)) + '</div>' +
         cardinalitySelectHtml('f-target-card', DEFAULT_TARGET_CARDINALITY) +
       '</div>' +
-      '<div><h4>' + escapeHtml(sourceEntity.name) + ' <span class="hint">(many)</span></h4>' + columnListHtml(sourceEntity) +
+      '<div><h4>' + escapeHtml(sourceEntity.name) + ' <span class="hint">(many)</span></h4>' +
+        '<div class="fk-mode-choice">' +
+          '<label><input type="radio" name="fk-mode" class="f-fk-mode" value="new" checked> New column(s)</label>' +
+          '<label><input type="radio" name="fk-mode" class="f-fk-mode" value="existing"> Existing column(s)</label>' +
+        '</div>' +
+        '<div class="f-existing-col-mapping" style="display:none"></div>' +
         cardinalitySelectHtml('f-source-card', DEFAULT_SOURCE_CARDINALITY) +
       '</div>' +
     '</div>' +
@@ -56,55 +72,94 @@ function openCreate(sourceEntityId: string, targetEntityId: string): void {
     '<label>Relation name - physical (optional)<br><input type="text" class="f-rel-name" placeholder="e.g. FK_ORDER_CUSTOMER"></label>' +
     '<label>Relation name - logical (optional)<br><input type="text" class="f-rel-logical-name" placeholder="e.g. places"></label>';
 
-  const select = body.querySelector('.f-target-col') as HTMLSelectElement;
-  targetEntity.columns.forEach((c) => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name + (c.pk ? ' (PK)' : '') + ' - ' + c.dataType;
-    select.appendChild(opt);
-  });
-  if (defaultTarget) select.value = defaultTarget.id;
-
+  const targetChecks = Array.from(body.querySelectorAll('.f-target-col-check')) as HTMLInputElement[];
+  const fkModeInputs = Array.from(body.querySelectorAll('.f-fk-mode')) as HTMLInputElement[];
+  const mappingWrap = body.querySelector('.f-existing-col-mapping') as HTMLElement;
   const previewEl = body.querySelector('.rel-preview') as HTMLElement;
-  function updatePreview(): void {
-    const col = targetEntity!.columns.find((c) => c.id === select.value) || null;
-    previewEl.textContent = previewText(sourceEntity!, col, targetEntity!.name);
+
+  function fkMode(): 'new' | 'existing' {
+    return (fkModeInputs.find((r) => r.checked) as HTMLInputElement).value as 'new' | 'existing';
   }
-  select.addEventListener('change', updatePreview);
-  updatePreview();
+  function checkedTargetColumns(): Column[] {
+    return targetChecks.filter((cb) => cb.checked).map((cb) => targetEntity!.columns.find((c) => c.id === cb.value)!).filter(Boolean);
+  }
+
+  function updatePreview(): void {
+    const cols = checkedTargetColumns();
+    if (!cols.length) { previewEl.textContent = 'Select at least one column to reference.'; return; }
+    if (fkMode() === 'existing') {
+      const lines = cols.map((tCol) => {
+        const sel = mappingWrap.querySelector('.f-map-col[data-target-col-id="' + tCol.id + '"]') as HTMLSelectElement | null;
+        const sCol = sel && sourceEntity!.columns.find((c) => c.id === sel.value);
+        return sCol ? 'Column "' + sCol.name + '" on ' + sourceEntity!.name + ' will be marked as FK and join its primary key.' : '';
+      });
+      previewEl.textContent = lines.filter(Boolean).join(' ');
+      return;
+    }
+    previewEl.textContent = cols.map((c) => previewLine(sourceEntity!, c, targetEntity!.name)).join(' ');
+  }
+
+  function renderMapping(): void {
+    const cols = checkedTargetColumns();
+    if (fkMode() !== 'existing') { mappingWrap.style.display = 'none'; updatePreview(); return; }
+    mappingWrap.style.display = '';
+    mappingWrap.innerHTML = '';
+    cols.forEach((tCol) => {
+      const row = document.createElement('label');
+      row.innerHTML = escapeHtml(tCol.name) + ' &rarr; <select class="f-map-col" data-target-col-id="' + tCol.id + '">' +
+        existingColumnSelectHtml(sourceEntity!) + '</select>';
+      row.querySelector('select')!.addEventListener('change', updatePreview);
+      mappingWrap.appendChild(row);
+    });
+    updatePreview();
+  }
+
+  targetChecks.forEach((cb) => cb.addEventListener('change', renderMapping));
+  fkModeInputs.forEach((r) => r.addEventListener('change', renderMapping));
+  renderMapping();
 
   modal.open({
     title: 'New relation',
-    width: '620px',
+    width: '660px',
     body,
     actions: [
       { label: 'Cancel', onClick: () => modal.close() },
       { label: 'Create relation', variant: 'primary', onClick: () => {
+        const cols = checkedTargetColumns();
+        if (!cols.length) { window.alert('Select at least one column to reference.'); return; }
+
         const name = (body.querySelector('.f-rel-name') as HTMLInputElement).value.trim();
         const logicalName = (body.querySelector('.f-rel-logical-name') as HTMLInputElement).value.trim();
         const sourceCardinality = (body.querySelector('.f-source-card') as HTMLSelectElement).value as Cardinality;
         const targetCardinality = (body.querySelector('.f-target-card') as HTMLSelectElement).value as Cardinality;
+
+        const targetColumnIds = cols.map((c) => c.id);
+        // Picking an existing column that's already the child's PK is a
+        // valid, deliberate choice (a 1:1 identifying relationship sharing
+        // the same key) - it just becomes PK+FK, no need to block it.
+        let explicitSourceColumnIds: Record<string, string> | undefined;
+        if (fkMode() === 'existing') {
+          explicitSourceColumnIds = {};
+          for (const tCol of cols) {
+            const sel = mappingWrap.querySelector('.f-map-col[data-target-col-id="' + tCol.id + '"]') as HTMLSelectElement;
+            explicitSourceColumnIds[tCol.id] = sel.value;
+          }
+        }
+
         relationInteraction.commit({
           sourceEntityId,
           targetEntityId,
-          targetColumnId: select.value,
+          targetColumnIds,
           name,
           logicalName,
           sourceCardinality,
-          targetCardinality
+          targetCardinality,
+          explicitSourceColumnIds
         });
         modal.close();
       } }
     ]
   });
-}
-
-function columnSelectHtml(entity: Entity, selectedId: string): string {
-  return entity.columns.map((c) => {
-    const flag = c.pk ? ' (PK)' : (c.fk ? ' (FK)' : '');
-    return '<option value="' + c.id + '"' + (c.id === selectedId ? ' selected' : '') + '>' +
-      escapeHtml(c.name + flag + ' - ' + c.dataType) + '</option>';
-  }).join('');
 }
 
 function openEdit(relationId: string): void {
@@ -114,18 +169,24 @@ function openEdit(relationId: string): void {
   const targetEntity = state.getEntity(relation.targetEntityId);
   if (!sourceEntity || !targetEntity) return;
 
+  const pairsHtml = relation.columnPairs.map((p) => {
+    const sCol = sourceEntity.columns.find((c) => c.id === p.sourceColumnId);
+    const tCol = targetEntity.columns.find((c) => c.id === p.targetColumnId);
+    return '<li>' + escapeHtml(sourceEntity.name) + '.' + escapeHtml(sCol ? sCol.name : '?') +
+      ' &rarr; ' + escapeHtml(targetEntity.name) + '.' + escapeHtml(tCol ? tCol.name : '?') + '</li>';
+  }).join('');
+
   const body = document.createElement('div');
   body.innerHTML =
     '<div class="rel-modal-grid">' +
       '<div><h4>' + escapeHtml(targetEntity.name) + ' <span class="hint">(one)</span></h4>' +
-        '<label>Referenced column<br><select class="f-target-col">' + columnSelectHtml(targetEntity, relation.targetColumnId) + '</select></label>' +
         cardinalitySelectHtml('f-target-card', targetCardinalityOf(relation)) +
       '</div>' +
       '<div><h4>' + escapeHtml(sourceEntity.name) + ' <span class="hint">(many)</span></h4>' +
-        '<label>Column<br><select class="f-source-col">' + columnSelectHtml(sourceEntity, relation.sourceColumnId) + '</select></label>' +
         cardinalitySelectHtml('f-source-card', sourceCardinalityOf(relation)) +
       '</div>' +
     '</div>' +
+    '<div class="rel-pairs-readout"><span class="hint">Linked columns</span><ul class="col-ref-list">' + pairsHtml + '</ul></div>' +
     '<label>Relation name - physical (optional)<br><input type="text" class="f-rel-name" value="' + escapeHtml(relation.name || '') + '"></label>' +
     '<label>Relation name - logical (optional)<br><input type="text" class="f-rel-logical-name" value="' + escapeHtml(relation.logicalName || '') + '"></label>';
 
@@ -140,33 +201,11 @@ function openEdit(relationId: string): void {
       } },
       { label: 'Cancel', onClick: () => modal.close() },
       { label: 'Save', variant: 'primary', onClick: () => {
-        const newSourceColId = (body.querySelector('.f-source-col') as HTMLSelectElement).value;
-        const newTargetColId = (body.querySelector('.f-target-col') as HTMLSelectElement).value;
-        const oldSourceColId = relation.sourceColumnId;
         const name = (body.querySelector('.f-rel-name') as HTMLInputElement).value.trim();
         const logicalName = (body.querySelector('.f-rel-logical-name') as HTMLInputElement).value.trim();
-
-        const newSourceCol = sourceEntity.columns.find((c) => c.id === newSourceColId);
-        if (newSourceCol && newSourceCol.pk) {
-          window.alert(sourceEntity.name + '.' + newSourceCol.name + ' is that table\'s primary key and cannot be used as the FK column.');
-          return;
-        }
-
-        const changed = newSourceColId !== oldSourceColId || newTargetColId !== relation.targetColumnId;
-        if (changed && state.relationExists(newSourceColId, newTargetColId)) {
-          window.alert('That column pair is already linked by another relation.');
-          return;
-        }
-
         const sourceCardinality = (body.querySelector('.f-source-card') as HTMLSelectElement).value as Cardinality;
         const targetCardinality = (body.querySelector('.f-target-card') as HTMLSelectElement).value as Cardinality;
-
-        state.updateColumn(relation.sourceEntityId, newSourceColId, { fk: true });
-        if (oldSourceColId !== newSourceColId) {
-          const stillUsed = state.data.relations.some((r) => r.id !== relationId && r.sourceColumnId === oldSourceColId);
-          if (!stillUsed) state.updateColumn(relation.sourceEntityId, oldSourceColId, { fk: false });
-        }
-        state.updateRelation(relationId, { name, logicalName, sourceColumnId: newSourceColId, targetColumnId: newTargetColId, sourceCardinality, targetCardinality });
+        state.updateRelation(relationId, { name, logicalName, sourceCardinality, targetCardinality });
         modal.close();
       } }
     ]

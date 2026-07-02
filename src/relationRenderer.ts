@@ -86,8 +86,10 @@ function linePath(aPt: Point, aSide: 'left' | 'right', bPt: Point, bSide: 'left'
 // current pk flag rather than stored separately, so toggling PK on that
 // column in the table details modal is enough to change the line style.
 function isIdentifying(relation: Relation): boolean {
-  const col = state.getColumn(relation.sourceEntityId, relation.sourceColumnId);
-  return !!col && col.pk;
+  return relation.columnPairs.every((p) => {
+    const col = state.getColumn(relation.sourceEntityId, p.sourceColumnId);
+    return !!col && col.pk;
+  });
 }
 
 // Same physical/logical convention as entity and column names: logical mode
@@ -177,8 +179,12 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
   const bBox = entityRenderer.getEntityBox(relation.targetEntityId);
   if (!aBox || !bBox) { node.style.display = 'none'; return; }
   node.style.display = '';
-  const aRow = entityRenderer.getColumnRowCenter(relation.sourceEntityId, relation.sourceColumnId);
-  const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, relation.targetColumnId);
+  // A composite (multi-column) FK still draws as a single line - anchored
+  // on the first column pair's rows.
+  const firstPair = relation.columnPairs[0];
+  if (!firstPair) { node.style.display = 'none'; return; }
+  const aRow = entityRenderer.getColumnRowCenter(relation.sourceEntityId, firstPair.sourceColumnId);
+  const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, firstPair.targetColumnId);
   if (!aRow || !bRow) { node.style.display = 'none'; return; }
 
   const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, relation.sourceEntityId === relation.targetEntityId);

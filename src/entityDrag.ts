@@ -41,11 +41,16 @@ function onMouseDown(e: MouseEvent): void {
     startMove(entityId, e);
     return;
   }
-  const row = closest(target, (el) => el.classList && el.classList.contains('entity-row'));
-  if (row) {
+  // Anywhere else on the entity (the whole body, not just a specific column
+  // row) starts a relation drag - which column(s) end up as the FK is
+  // decided later in the create-relation modal, not by where you grabbed.
+  const body = closest(target, (el) => el.classList && el.classList.contains('entity-body'));
+  if (body) {
     e.stopPropagation();
-    state.select('entity', row.dataset.entityId!);
-    relationInteraction.start(row.dataset.entityId!, row.dataset.colId!, e);
+    const entityNode = closest(body, (el) => !!el.dataset && !!el.dataset.entityId)!;
+    const entityId = entityNode.dataset.entityId!;
+    state.select('entity', entityId);
+    relationInteraction.start(entityId, e);
   }
 }
 

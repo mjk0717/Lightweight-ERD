@@ -1,12 +1,13 @@
 import { state } from './state';
 import { viewport } from './viewport';
-import { nextId, closest, escapeHtml } from './util';
+import { nextId, closest, escapeHtml, clamp } from './util';
 import { entityRenderer } from './entityRenderer';
 import { relationRenderer } from './relationRenderer';
 import { modalRelation } from './modalRelation';
 import { modalEntity } from './modalEntity';
 import { modal } from './modal';
-import { Cardinality, Column, FkPlan, Relation } from './types';
+import { theme } from './theme';
+import { Cardinality, Column, FkPlan, Relation, RelationColumnPair } from './types';
 import { DEFAULT_SOURCE_CARDINALITY, DEFAULT_TARGET_CARDINALITY } from './cardinality';
 
 const DRAG_THRESHOLD = 4;
@@ -27,15 +28,25 @@ function planFkColumn(sourceEntityId: string, targetColumn: Column, targetEntity
   return { isNew: true, name: candidateName };
 }
 
+// Turns an existing column into the relation's FK column, following the
+// same rule new FK columns get: relations are identifying by default, so
+// the column also joins the child's PK block and becomes NOT NULL. Shared
+// by the auto find-or-create path and by explicitly picking an existing
+// column in the create-relation modal, so both go through one process.
+function markColumnAsFk(sourceEntityId: string, colId: string): void {
+  state.updateColumn(sourceEntityId, colId, { fk: true, pk: true, nullable: false });
+  state.moveColumnAfterPkBlock(sourceEntityId, colId);
+}
+
 function findOrCreateFkColumn(sourceEntityId: string, targetColumn: Column, targetEntityName: string): string {
   const plan = planFkColumn(sourceEntityId, targetColumn, targetEntityName);
   if (!plan.isNew) {
-    state.updateColumn(sourceEntityId, plan.existingId!, { fk: true });
+    markColumnAsFk(sourceEntityId, plan.existingId!);
     return plan.existingId!;
   }
   const newCol: Column = {
     id: nextId('col'), name: plan.name, dataType: targetColumn.dataType,
-    comment: 'FK -> ' + targetEntityName, pk: false, fk: true, nullable: true, isSystem: false, systemColId: null
+    comment: 'FK -> ' + targetEntityName, pk: true, fk: true, nullable: false, isSystem: false, systemColId: null
   };
   state.addColumn(sourceEntityId, newCol);
   return newCol.id;
@@ -44,78 +55,112 @@ function findOrCreateFkColumn(sourceEntityId: string, targetColumn: Column, targ
 interface CommitOptions {
   sourceEntityId: string;
   targetEntityId: string;
-  targetColumnId: string;
+  // One target (parent) column per FK column - more than one means a
+  // composite (multi-column) FK.
+  targetColumnIds: string[];
   name: string;
   logicalName?: string;
   sourceCardinality?: Cardinality;
   targetCardinality?: Cardinality;
+  // When set for a given target column, use that specific existing child
+  // column as its FK instead of the auto find-or-create-by-name logic (the
+  // "specify" path in the create-relation modal, as opposed to "create new
+  // column"). Keyed by targetColumnId.
+  explicitSourceColumnIds?: Record<string, string>;
 }
 
-// Creates (or reuses) the FK column on the source entity based on the
-// chosen target column, then records the relation. Returns null if the
-// exact same source/target column pair is already linked.
+// Creates (or reuses) the FK column(s) on the source entity based on the
+// chosen target column(s), then records the relation. Returns null if the
+// exact same set of column pairs is already linked.
 function commit(opts: CommitOptions): Relation | null {
   const targetEntity = state.getEntity(opts.targetEntityId);
-  const targetColumn = state.getColumn(opts.targetEntityId, opts.targetColumnId);
-  if (!targetEntity || !targetColumn) return null;
-  const sourceColumnId = findOrCreateFkColumn(opts.sourceEntityId, targetColumn, targetEntity.name);
-  if (state.relationExists(sourceColumnId, opts.targetColumnId)) return null;
+  if (!targetEntity || !opts.targetColumnIds.length) return null;
+
+  const pairs: RelationColumnPair[] = [];
+  for (const targetColumnId of opts.targetColumnIds) {
+    const targetColumn = state.getColumn(opts.targetEntityId, targetColumnId);
+    if (!targetColumn) return null;
+    const explicitSourceColumnId = opts.explicitSourceColumnIds && opts.explicitSourceColumnIds[targetColumnId];
+    let sourceColumnId: string;
+    if (explicitSourceColumnId) {
+      markColumnAsFk(opts.sourceEntityId, explicitSourceColumnId);
+      sourceColumnId = explicitSourceColumnId;
+    } else {
+      sourceColumnId = findOrCreateFkColumn(opts.sourceEntityId, targetColumn, targetEntity.name);
+    }
+    pairs.push({ sourceColumnId, targetColumnId });
+  }
+
+  if (state.relationExistsWithPairs(pairs)) return null;
   return state.addRelation({
     id: nextId('rel'),
     name: opts.name || '',
     logicalName: opts.logicalName || '',
     sourceEntityId: opts.sourceEntityId,
-    sourceColumnId,
     targetEntityId: opts.targetEntityId,
-    targetColumnId: opts.targetColumnId,
+    columnPairs: pairs,
     sourceCardinality: opts.sourceCardinality || DEFAULT_SOURCE_CARDINALITY,
     targetCardinality: opts.targetCardinality || DEFAULT_TARGET_CARDINALITY
   });
 }
 
-// Removes a relation. If its FK column isn't shared with another relation,
-// asks whether to also delete that column from the child table or leave it
-// behind as a plain (non-FK) attribute.
+// Removes a relation. If none of its FK columns are shared with another
+// relation, asks whether to also delete them from the child table or leave
+// them behind as plain (non-FK) attributes. If any column IS shared, the
+// relation is just unlinked and those columns are left untouched.
 function remove(relationId: string): void {
   const relation = state.getRelation(relationId);
   if (!relation) return;
-  const colId = relation.sourceColumnId, entId = relation.sourceEntityId;
-  const stillUsedByOthers = state.data.relations.some((r) => r.id !== relationId && r.sourceColumnId === colId);
+  const entId = relation.sourceEntityId;
+  const colIds = relation.columnPairs.map((p) => p.sourceColumnId);
+  const stillUsedByOthers = colIds.some((colId) =>
+    state.data.relations.some((r) => r.id !== relationId && r.columnPairs.some((p) => p.sourceColumnId === colId))
+  );
 
   if (stillUsedByOthers) {
     state.removeRelation(relationId);
     return;
   }
 
-  const col = state.getColumn(entId, colId);
   const entity = state.getEntity(entId);
+  const colNames = colIds.map((id) => state.getColumn(entId, id)).filter((c): c is Column => !!c).map((c) => c.name).join(', ');
+  const plural = colIds.length > 1;
   const body = document.createElement('div');
-  body.innerHTML = '<p>Remove this relation. What should happen to the column "' +
-    escapeHtml(col ? col.name : '') + '" on ' + escapeHtml(entity ? entity.name : '') + '?</p>';
+  body.innerHTML = '<p>Remove this relation. What should happen to the column' + (plural ? 's' : '') + ' "' +
+    escapeHtml(colNames) + '" on ' + escapeHtml(entity ? entity.name : '') + '?</p>';
 
   modal.open({
     title: 'Delete relation',
     body,
     actions: [
       { label: 'Cancel', onClick: () => modal.close() },
-      { label: 'Keep column', onClick: () => {
+      { label: 'Keep column' + (plural ? 's' : ''), onClick: () => {
         state.removeRelation(relationId);
-        state.updateColumn(entId, colId, { fk: false });
+        colIds.forEach((colId) => state.updateColumn(entId, colId, { fk: false }));
         modal.close();
       } },
-      { label: 'Delete column', variant: 'danger', onClick: () => {
+      { label: 'Delete column' + (plural ? 's' : ''), variant: 'danger', onClick: () => {
         state.removeRelation(relationId);
-        state.removeColumn(entId, colId);
+        colIds.forEach((colId) => state.removeColumn(entId, colId));
         modal.close();
       } }
     ]
   });
 }
 
-function start(entityId: string, colId: string, startEvent: MouseEvent): void {
+// Starting a relation drag no longer requires grabbing a specific column
+// row - anywhere on the entity's body works. The row nearest the pointer is
+// only used as a visual anchor for the temp line; which column(s) actually
+// become the FK is decided entirely in the create-relation modal.
+function start(entityId: string, startEvent: MouseEvent): void {
   const box = entityRenderer.getEntityBox(entityId);
-  const rowCenter = entityRenderer.getColumnRowCenter(entityId, colId);
-  if (!box || !rowCenter) return;
+  const entity = state.getEntity(entityId);
+  if (!box || !entity) return;
+
+  const startWorld = viewport.screenToWorld(startEvent.clientX, startEvent.clientY);
+  const maxRowIdx = Math.max(entity.columns.length - 1, 0);
+  const rowIdx = clamp(Math.floor((startWorld.y - box.y - theme.headerHeight) / theme.rowHeight), 0, maxRowIdx);
+  const anchorY = box.y + theme.headerHeight + rowIdx * theme.rowHeight + theme.rowHeight / 2;
 
   const startClient = { x: startEvent.clientX, y: startEvent.clientY };
   let dragging = false;
@@ -128,7 +173,7 @@ function start(entityId: string, colId: string, startEvent: MouseEvent): void {
     }
     const mouseWorld = viewport.screenToWorld(ev.clientX, ev.clientY);
     const side = mouseWorld.x >= box!.x + box!.w / 2 ? 'right' : 'left';
-    const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: rowCenter!.y };
+    const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: anchorY };
     relationRenderer.setTempLine(anchor, mouseWorld);
   }
 
@@ -139,7 +184,7 @@ function start(entityId: string, colId: string, startEvent: MouseEvent): void {
 
     if (!dragging) {
       // A plain click on the body (no real drag) opens the table details
-      // instead of misfiring a relation-create modal against itself.
+      // instead of misfiring a self-relation.
       modalEntity.open(entityId);
       return;
     }
@@ -149,7 +194,7 @@ function start(entityId: string, colId: string, startEvent: MouseEvent): void {
     if (!entityNode) return;
     // Dragging goes parent -> child: the entity you start on is the "one"
     // side being referenced, the entity you drop onto is the "many" side
-    // that receives the FK column.
+    // that receives the FK column(s).
     const droppedEntityId = entityNode.dataset.entityId!;
     modalRelation.openCreate(droppedEntityId, entityId);
   }

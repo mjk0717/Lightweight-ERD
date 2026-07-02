@@ -1,5 +1,5 @@
 import { nextId } from './util';
-import { Column, DdlFkCandidate, DdlParseResult, DdlTable } from './types';
+import { Column, DdlFkCandidate, DdlParseResult, DdlRelation, DdlTable } from './types';
 
 // Lightweight regex/scanner based Oracle DDL reader. It intentionally only
 // understands the handful of statement shapes needed for reverse-engineering
@@ -222,7 +222,7 @@ export function parse(rawText: string): DdlParseResult {
     // GRANT, ALTER TABLE MODIFY/ENABLE/DISABLE, PARTITION BY, storage clauses...) is dropped.
   });
 
-  const relations = [];
+  const relations: DdlRelation[] = [];
   for (const fk of fkCandidates) {
     if (!fk.columns.length || !fk.refColumns.length) continue;
     const srcTable = tables.find((t) => t.name.toUpperCase() === fk.table.toUpperCase());
@@ -231,20 +231,21 @@ export function parse(rawText: string): DdlParseResult {
       warnings.push('Skipped FK referencing unknown table: ' + fk.table + ' -> ' + fk.refTable);
       continue;
     }
-    const srcColName = fk.columns[0];
-    const dstColName = fk.refColumns[0];
-    if (fk.columns.length > 1) {
-      warnings.push('Composite FK on ' + fk.table + ' simplified to first column pair (' + srcColName + ')');
+    if (fk.columns.length !== fk.refColumns.length) {
+      warnings.push('Skipped FK on ' + fk.table + ' - column count mismatch with referenced key');
+      continue;
     }
 
-    const srcCol = srcTable.columns.find((c) => c.name.toUpperCase() === srcColName.toUpperCase());
-    if (srcCol) srcCol.fk = true;
+    fk.columns.forEach((colName) => {
+      const srcCol = srcTable.columns.find((c) => c.name.toUpperCase() === colName.toUpperCase());
+      if (srcCol) srcCol.fk = true;
+    });
 
     relations.push({
       sourceTable: srcTable.name,
-      sourceColumn: srcColName,
+      sourceColumns: fk.columns,
       targetTable: dstTable.name,
-      targetColumn: dstColName,
+      targetColumns: fk.refColumns,
       name: ''
     });
   }

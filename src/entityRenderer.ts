@@ -74,6 +74,7 @@ function updateEntityNode(node: HTMLElement, entity: Entity): void {
   node.style.width = theme.entityWidth + 'px';
   const header = node.querySelector('.entity-header') as HTMLElement;
   header.title = entity.name + (entity.comment ? ' - ' + entity.comment : '');
+  header.style.background = entity.headerColor || theme.colors.headerBg;
   (header.querySelector('.entity-name') as HTMLElement).textContent = displayEntityName(entity);
 
   const body = node.querySelector('.entity-body') as HTMLElement;

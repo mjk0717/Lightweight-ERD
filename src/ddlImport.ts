@@ -3,7 +3,7 @@ import { modal } from './modal';
 import { nextId, readFileAsText, escapeHtml } from './util';
 import { parse } from './ddlParser';
 import { DEFAULT_SOURCE_CARDINALITY, DEFAULT_TARGET_CARDINALITY } from './cardinality';
-import { Column, DdlParseResult, Entity } from './types';
+import { Column, DdlParseResult, Entity, RelationColumnPair } from './types';
 
 interface ImportSummary {
   tableCount: number;
@@ -26,7 +26,7 @@ function importParsedResult(result: DdlParseResult): ImportSummary {
       state.applySystemColumnsToEntity(entity);
     } else {
       const pos = state.nextEntityPosition();
-      const entity: Entity = { id: nextId('ent'), name: table.name, comment: table.comment || '', x: pos.x, y: pos.y, columns };
+      const entity: Entity = { id: nextId('ent'), name: table.name, comment: table.comment || '', x: pos.x, y: pos.y, columns, headerColor: null };
       state.applySystemColumnsToEntity(entity);
       state.addEntity(entity);
       nameToEntityId[upper] = entity.id;
@@ -40,14 +40,20 @@ function importParsedResult(result: DdlParseResult): ImportSummary {
     if (!sourceId || !targetId) return;
     const sourceEntity = state.getEntity(sourceId)!;
     const targetEntity = state.getEntity(targetId)!;
-    const sourceCol = sourceEntity.columns.find((c) => c.name.toUpperCase() === rel.sourceColumn.toUpperCase());
-    const targetCol = targetEntity.columns.find((c) => c.name.toUpperCase() === rel.targetColumn.toUpperCase());
-    if (!sourceCol || !targetCol) return;
-    if (state.relationExists(sourceCol.id, targetCol.id)) return;
+
+    const columnPairs: RelationColumnPair[] = [];
+    for (let i = 0; i < rel.sourceColumns.length; i++) {
+      const sourceCol = sourceEntity.columns.find((c) => c.name.toUpperCase() === rel.sourceColumns[i].toUpperCase());
+      const targetCol = targetEntity.columns.find((c) => c.name.toUpperCase() === rel.targetColumns[i].toUpperCase());
+      if (!sourceCol || !targetCol) { columnPairs.length = 0; break; }
+      columnPairs.push({ sourceColumnId: sourceCol.id, targetColumnId: targetCol.id });
+    }
+    if (!columnPairs.length) return;
+    if (state.relationExistsWithPairs(columnPairs)) return;
+
     state.addRelation({
       id: nextId('rel'), name: rel.name || '', logicalName: '',
-      sourceEntityId: sourceId, sourceColumnId: sourceCol.id,
-      targetEntityId: targetId, targetColumnId: targetCol.id,
+      sourceEntityId: sourceId, targetEntityId: targetId, columnPairs,
       sourceCardinality: DEFAULT_SOURCE_CARDINALITY, targetCardinality: DEFAULT_TARGET_CARDINALITY
     });
     created++;

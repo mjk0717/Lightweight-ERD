@@ -17,18 +17,25 @@ export interface Entity {
   x: number;
   y: number;
   columns: Column[];
+  headerColor: string | null;
 }
 
 export type Cardinality = 'zero-or-one' | 'one' | 'zero-or-many' | 'many' | 'one-or-many';
+
+// One column pair of the FK relationship - a relation has one pair for a
+// plain FK, or several for a composite (multi-column) FK.
+export interface RelationColumnPair {
+  sourceColumnId: string;
+  targetColumnId: string;
+}
 
 export interface Relation {
   id: string;
   name: string;
   logicalName: string;
   sourceEntityId: string;
-  sourceColumnId: string;
   targetEntityId: string;
-  targetColumnId: string;
+  columnPairs: RelationColumnPair[];
   sourceCardinality: Cardinality;
   targetCardinality: Cardinality;
 }
@@ -101,9 +108,9 @@ export interface DdlTable {
 
 export interface DdlRelation {
   sourceTable: string;
-  sourceColumn: string;
+  sourceColumns: string[];
   targetTable: string;
-  targetColumn: string;
+  targetColumns: string[];
   name: string;
 }
 

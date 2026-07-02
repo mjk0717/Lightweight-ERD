@@ -10,12 +10,11 @@ import { Entity } from './types';
 
 function addTableAt(x: number, y: number): void {
   const entity: Entity = {
-    id: nextId('ent'), name: 'NEW_TABLE', comment: '', x, y,
+    id: nextId('ent'), name: 'NEW_TABLE', comment: '', x, y, headerColor: null,
     columns: [{ id: nextId('col'), name: 'ID', dataType: 'NUMBER(10)', comment: '', pk: true, fk: false, nullable: false, isSystem: false, systemColId: null }]
   };
   state.applySystemColumnsToEntity(entity);
-  state.addEntity(entity);
-  modalEntity.open(entity.id, { isNew: true });
+  modalEntity.openNew(entity);
 }
 
 function addTable(): void {

@@ -9,11 +9,10 @@ export const CARDINALITY_OPTIONS: { value: Cardinality; label: string }[] = [
 ];
 
 export const DEFAULT_SOURCE_CARDINALITY: Cardinality = 'many';
-export const DEFAULT_TARGET_CARDINALITY: Cardinality = 'one';
+export const DEFAULT_TARGET_CARDINALITY: Cardinality = 'one-or-many';
 
 // Older saved relations (or relations built before this field existed) may
-// be missing the cardinality fields - fall back to the original hardcoded
-// look (many at the FK end, one at the referenced end).
+// be missing the cardinality fields - fall back to the current default look.
 export function sourceCardinalityOf(c: { sourceCardinality?: Cardinality }): Cardinality {
   return c.sourceCardinality || DEFAULT_SOURCE_CARDINALITY;
 }

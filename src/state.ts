@@ -134,11 +134,20 @@ function getColumn(entityId: string, colId: string): Column | null {
 function addColumn(entityId: string, column: Column): Column | null {
   const e = getEntity(entityId);
   if (!e) return null;
-  // Regular columns (including FK columns created by connecting a relation)
-  // always land above system columns, never mixed in below them.
-  const firstSystemIdx = column.isSystem ? -1 : e.columns.findIndex((c) => c.isSystem);
-  if (firstSystemIdx === -1) e.columns.push(column);
-  else e.columns.splice(firstSystemIdx, 0, column);
+  if (column.isSystem) {
+    e.columns.push(column);
+  } else if (column.pk) {
+    // A new PK column (e.g. the FK column of an identifying relationship)
+    // joins the existing PK block, right below the table's other PK columns.
+    let insertAt = 0;
+    e.columns.forEach((c, i) => { if (c.pk) insertAt = i + 1; });
+    e.columns.splice(insertAt, 0, column);
+  } else {
+    // Plain (non-PK) columns land above system columns, never mixed below them.
+    const firstSystemIdx = e.columns.findIndex((c) => c.isSystem);
+    if (firstSystemIdx === -1) e.columns.push(column);
+    else e.columns.splice(firstSystemIdx, 0, column);
+  }
   notify('change');
   return column;
 }
@@ -154,7 +163,11 @@ function removeColumn(entityId: string, colId: string): void {
   const e = getEntity(entityId);
   if (!e) return;
   e.columns = e.columns.filter((c) => c.id !== colId);
-  data.relations = data.relations.filter((r) => r.sourceColumnId !== colId && r.targetColumnId !== colId);
+  // Drop just the broken pair from each relation's composite key; if that
+  // empties it out entirely, the relation itself no longer makes sense.
+  data.relations = data.relations
+    .map((r) => ({ ...r, columnPairs: r.columnPairs.filter((p) => p.sourceColumnId !== colId && p.targetColumnId !== colId) }))
+    .filter((r) => r.columnPairs.length > 0);
   notify('change');
 }
 
@@ -165,6 +178,22 @@ function reorderColumns(entityId: string, orderedIds: string[]): void {
   const next = orderedIds.map((id) => map.get(id)).filter((c): c is Column => !!c);
   e.columns.forEach((c) => { if (next.indexOf(c) === -1) next.push(c); });
   e.columns = next;
+  notify('change');
+}
+
+// Repositions an existing column to sit right after the table's other PK
+// columns - used when a plain attribute gets promoted to part of the PK
+// (e.g. reusing it as the FK of a newly identifying relationship).
+function moveColumnAfterPkBlock(entityId: string, colId: string): void {
+  const e = getEntity(entityId);
+  if (!e) return;
+  const col = e.columns.find((c) => c.id === colId);
+  if (!col) return;
+  const rest = e.columns.filter((c) => c.id !== colId);
+  let insertAt = 0;
+  rest.forEach((c, i) => { if (c.pk) insertAt = i + 1; });
+  rest.splice(insertAt, 0, col);
+  e.columns = rest;
   notify('change');
 }
 
@@ -188,7 +217,18 @@ function removeRelation(id: string): void {
   notify('change');
 }
 function relationExists(sourceColumnId: string, targetColumnId: string): boolean {
-  return data.relations.some((r) => r.sourceColumnId === sourceColumnId && r.targetColumnId === targetColumnId);
+  return data.relations.some((r) => r.columnPairs.some((p) => p.sourceColumnId === sourceColumnId && p.targetColumnId === targetColumnId));
+}
+
+// True if some existing relation already links this exact set of column
+// pairs (order-independent) - used to dedupe composite FK creation.
+function relationExistsWithPairs(pairs: { sourceColumnId: string; targetColumnId: string }[]): boolean {
+  const key = (p: { sourceColumnId: string; targetColumnId: string }) => p.sourceColumnId + '::' + p.targetColumnId;
+  const candidateKeys = new Set(pairs.map(key));
+  return data.relations.some((r) => {
+    if (r.columnPairs.length !== pairs.length) return false;
+    return r.columnPairs.every((p) => candidateKeys.has(key(p)));
+  });
 }
 
 // ---- system columns ----
@@ -240,7 +280,7 @@ export const state = {
   select, clearSelection, setDesignMode, setLineStyle,
   nextEntityPosition,
   addEntity, getEntity, updateEntity, removeEntity, moveEntity,
-  getColumn, addColumn, updateColumn, removeColumn, reorderColumns,
-  addRelation, getRelation, updateRelation, removeRelation, relationExists,
+  getColumn, addColumn, updateColumn, removeColumn, reorderColumns, moveColumnAfterPkBlock,
+  addRelation, getRelation, updateRelation, removeRelation, relationExists, relationExistsWithPairs,
   setSystemColumns, applySystemColumnsToEntity
 };

@@ -1,6 +1,7 @@
 import { state } from './state';
 import { modal } from './modal';
 import { escapeHtml, nextId, ORACLE_TYPES } from './util';
+import { HEADER_COLOR_PALETTE, theme } from './theme';
 import { Column, Entity } from './types';
 
 let draft: Entity | null = null;
@@ -102,6 +103,30 @@ function buildBody(entity: Entity): HTMLElement {
   (head.querySelector('.f-entity-comment') as HTMLInputElement).addEventListener('input', (e) => { draft!.comment = (e.target as HTMLInputElement).value; });
   wrap.appendChild(head);
 
+  const palette = document.createElement('div');
+  palette.className = 'header-color-palette';
+  function renderPalette(): void {
+    palette.innerHTML = '<span class="hint">Header color</span>';
+    HEADER_COLOR_PALETTE.forEach((color) => {
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'color-swatch' + ((draft!.headerColor || theme.colors.headerBg) === color ? ' selected' : '');
+      swatch.style.background = color;
+      swatch.title = color;
+      swatch.addEventListener('click', () => { draft!.headerColor = color; renderPalette(); });
+      palette.appendChild(swatch);
+    });
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'color-swatch color-swatch-reset' + (!draft!.headerColor ? ' selected' : '');
+    resetBtn.title = 'Default';
+    resetBtn.textContent = '✕';
+    resetBtn.addEventListener('click', () => { draft!.headerColor = null; renderPalette(); });
+    palette.appendChild(resetBtn);
+  }
+  renderPalette();
+  wrap.appendChild(palette);
+
   const table = document.createElement('table');
   table.className = 'col-grid';
   table.innerHTML =
@@ -127,38 +152,55 @@ function buildBody(entity: Entity): HTMLElement {
   return wrap;
 }
 
-function open(entityId: string, opts?: { isNew?: boolean }): void {
+function open(entityId: string): void {
   const entity = state.getEntity(entityId);
   if (!entity) return;
   const body = buildBody(entity);
-  let resolved = false;
 
   modal.open({
     title: 'Table details',
     width: '720px',
     body,
-    // If this entity was just created for the modal (e.g. from "+ Table")
-    // and the user dismisses without saving (Cancel, Escape, backdrop click,
-    // the X button), undo the creation instead of leaving a stray table.
-    onClose: () => {
-      if (opts?.isNew && !resolved) state.removeEntity(entityId);
-    },
     actions: [
-      { label: 'Delete table', variant: 'danger', onClick: () => { resolved = true; state.removeEntity(entity.id); modal.close(); } },
-      { label: 'Cancel', onClick: () => { modal.close(); } },
+      { label: 'Delete table', variant: 'danger', onClick: () => { state.removeEntity(entity.id); modal.close(); } },
+      { label: 'Cancel', onClick: () => modal.close() },
       { label: 'Save', variant: 'primary', onClick: () => {
-        resolved = true;
         const keptIds = new Set(draft!.columns.map((c) => c.id));
-        state.data.relations = state.data.relations.filter((r) => {
-          const breaksSource = r.sourceEntityId === entity.id && !keptIds.has(r.sourceColumnId);
-          const breaksTarget = r.targetEntityId === entity.id && !keptIds.has(r.targetColumnId);
-          return !(breaksSource || breaksTarget);
-        });
-        state.updateEntity(entity.id, { name: draft!.name, comment: draft!.comment, columns: draft!.columns });
+        state.data.relations = state.data.relations
+          .map((r) => {
+            if (r.sourceEntityId !== entity.id && r.targetEntityId !== entity.id) return r;
+            const columnPairs = r.columnPairs.filter((p) =>
+              (r.sourceEntityId !== entity.id || keptIds.has(p.sourceColumnId)) &&
+              (r.targetEntityId !== entity.id || keptIds.has(p.targetColumnId))
+            );
+            return { ...r, columnPairs };
+          })
+          .filter((r) => r.columnPairs.length > 0);
+        state.updateEntity(entity.id, { name: draft!.name, comment: draft!.comment, columns: draft!.columns, headerColor: draft!.headerColor });
         modal.close();
       } }
     ]
   });
 }
 
-export const modalEntity = { open };
+// Used by "+ Table": shows the same editor for a table that doesn't exist
+// in state yet. Nothing is created until Save is clicked; Cancel/Escape/the
+// backdrop simply discard the template with no state change at all.
+function openNew(template: Entity): void {
+  const body = buildBody(template);
+
+  modal.open({
+    title: 'Table details',
+    width: '720px',
+    body,
+    actions: [
+      { label: 'Cancel', onClick: () => modal.close() },
+      { label: 'Save', variant: 'primary', onClick: () => {
+        state.addEntity({ ...draft! });
+        modal.close();
+      } }
+    ]
+  });
+}
+
+export const modalEntity = { open, openNew };
