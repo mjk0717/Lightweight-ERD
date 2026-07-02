@@ -156,10 +156,16 @@ function start(entityId: string, startEvent: MouseEvent): void {
   const entity = state.getEntity(entityId);
   if (!box || !entity) return;
 
-  const startWorld = viewport.screenToWorld(startEvent.clientX, startEvent.clientY);
   const maxRowIdx = Math.max(entity.columns.length - 1, 0);
-  const rowIdx = clamp(Math.floor((startWorld.y - box.y - theme.headerHeight) / theme.rowHeight), 0, maxRowIdx);
-  const anchorY = box.y + theme.headerHeight + rowIdx * theme.rowHeight + theme.rowHeight / 2;
+
+  // Not pinned to whichever row you happened to grab - the anchor follows
+  // the pointer's current vertical position for the whole drag (still
+  // clamped to the entity's row range), so the start point can be dragged
+  // freely instead of being locked to the initial click.
+  function anchorYFor(worldY: number): number {
+    const rowIdx = clamp(Math.floor((worldY - box!.y - theme.headerHeight) / theme.rowHeight), 0, maxRowIdx);
+    return box!.y + theme.headerHeight + rowIdx * theme.rowHeight + theme.rowHeight / 2;
+  }
 
   const startClient = { x: startEvent.clientX, y: startEvent.clientY };
   let dragging = false;
@@ -172,7 +178,7 @@ function start(entityId: string, startEvent: MouseEvent): void {
     }
     const mouseWorld = viewport.screenToWorld(ev.clientX, ev.clientY);
     const side = mouseWorld.x >= box!.x + box!.w / 2 ? 'right' : 'left';
-    const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: anchorY };
+    const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: anchorYFor(mouseWorld.y) };
     relationRenderer.setTempLine(anchor, mouseWorld);
   }
 
