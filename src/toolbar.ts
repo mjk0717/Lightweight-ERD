@@ -3,6 +3,7 @@ import { nextId } from './util';
 import { modalEntity } from './modalEntity';
 import { modalSystemColumns } from './modalSystemColumns';
 import { ddlImport } from './ddlImport';
+import { ddlExport } from './ddlExport';
 import { pngExport } from './pngExport';
 import { jsonIO } from './jsonIO';
 import { viewport } from './viewport';
@@ -59,6 +60,7 @@ function init(): void {
   bind('btn-add-table', addTable);
   bind('btn-import-ddl', () => ddlImport.open());
   bind('btn-export-png', () => pngExport.exportPng());
+  bind('btn-export-ddl', () => ddlExport.openBulk());
   bind('btn-export-json', () => jsonIO.exportJson());
   bind('btn-import-json', () => jsonIO.importJson());
   bind('btn-system-columns', () => modalSystemColumns.open());
