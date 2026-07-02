@@ -182,20 +182,13 @@ function angularPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSid
 // ends push out in the same direction, producing a flattened, kinked shape
 // rather than a clean loop. Drawn as an exception: a proper circular arc
 // bulging out from the edge, regardless of the current line-style setting.
-// The circular-arc treatment only makes sense when both ends share the same
-// edge (the default before either is manually dragged) - the two markers'
-// outward directions are then perpendicular to the chord between them, so a
-// single "bulge in this direction" arc is well-defined. If they've been
-// dragged onto different edges (e.g. top and left), that assumption breaks;
-// fall back to the ordinary per-side bezier routing, which already handles
-// two independent outward directions correctly.
-function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
-  if (aSide !== bSide) return bezierPath(aPt, aSide, bPt, bSide);
-  const markerA = markerAnchor(aPt, aSide);
-  const markerB = markerAnchor(bPt, bSide);
+// Same edge (the default before either end is manually dragged): the two
+// markers' outward directions are parallel, which means they're
+// diametrically opposite on a circle - a single "bulge in this direction"
+// arc is well-defined.
+function sameSideLoop(aPt: Point, markerA: Point, bPt: Point, markerB: Point, dir: Point) {
   const chord = Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y);
   const r = Math.max(chord / 2, 40);
-  const dir = sideDir(aSide);
   const chordMidX = (markerA.x + markerB.x) / 2, chordMidY = (markerA.y + markerB.y) / 2;
   return {
     d: 'M ' + aPt.x + ' ' + aPt.y +
@@ -204,6 +197,38 @@ function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSi
       ' L ' + bPt.x + ' ' + bPt.y,
     mid: { x: chordMidX + dir.x * r, y: chordMidY + dir.y * r }
   };
+}
+
+// Perpendicular sides (e.g. top and left): a single circular arc can only
+// match both markers' outward tangent directions exactly when their
+// horizontal and vertical offsets from each other happen to be equal - not
+// true in general. Rather than chase an exact fit (which can force the arc
+// to loop back through the box when it isn't reachable outward), just
+// connect the two markers directly with a fixed-radius arc; SVG's arc
+// parameterization scales the radius up automatically if it's smaller than
+// half the distance between them, so this always renders a single valid
+// circular arc regardless of the marker positions.
+const PERPENDICULAR_LOOP_RADIUS = 60;
+function perpendicularCornerLoop(aPt: Point, markerA: Point, dirA: Point, bPt: Point, markerB: Point, dirB: Point) {
+  const cross = dirA.x * dirB.y - dirA.y * dirB.x;
+  const sweep = cross > 0 ? 1 : 0;
+  return {
+    d: 'M ' + aPt.x + ' ' + aPt.y +
+      ' L ' + markerA.x + ' ' + markerA.y +
+      ' A ' + PERPENDICULAR_LOOP_RADIUS + ' ' + PERPENDICULAR_LOOP_RADIUS + ' 0 0 ' + sweep + ' ' + markerB.x + ' ' + markerB.y +
+      ' L ' + bPt.x + ' ' + bPt.y,
+    mid: { x: (markerA.x + markerB.x) / 2, y: (markerA.y + markerB.y) / 2 }
+  };
+}
+
+function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
+  const markerA = markerAnchor(aPt, aSide);
+  const markerB = markerAnchor(bPt, bSide);
+  const dirA = sideDir(aSide), dirB = sideDir(bSide);
+  if (aSide === bSide) return sameSideLoop(aPt, markerA, bPt, markerB, dirA);
+  const isOpposite = dirA.x === -dirB.x && dirA.y === -dirB.y;
+  if (isOpposite) return bezierPath(aPt, aSide, bPt, bSide);
+  return perpendicularCornerLoop(aPt, markerA, dirA, bPt, markerB, dirB);
 }
 
 function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, isSelf: boolean) {
