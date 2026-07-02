@@ -34,6 +34,7 @@ function show(items: ContextMenuItem[], x: number, y: number, headerEl?: HTMLEle
     menuEl.appendChild(document.createElement('div')).className = 'context-menu-sep';
   }
   items.forEach((item) => {
+    if (item.sepBefore) menuEl!.appendChild(document.createElement('div')).className = 'context-menu-sep';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'context-menu-item' + (item.danger ? ' danger' : '');
@@ -55,7 +56,7 @@ function buildPaletteHeader(entity: Entity): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'header-color-palette context-menu-palette';
   function render(): void {
-    wrap.innerHTML = '<span class="hint">Header color</span>';
+    wrap.innerHTML = '';
     HEADER_COLOR_PALETTE.forEach((color) => {
       const swatch = document.createElement('button');
       swatch.type = 'button';
@@ -69,17 +70,6 @@ function buildPaletteHeader(entity: Entity): HTMLElement {
       });
       wrap.appendChild(swatch);
     });
-    const resetBtn = document.createElement('button');
-    resetBtn.type = 'button';
-    resetBtn.className = 'color-swatch color-swatch-reset' + (!entity.headerColor ? ' selected' : '');
-    resetBtn.title = 'Default';
-    resetBtn.textContent = '✕';
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.updateEntity(entity.id, { headerColor: null });
-      render();
-    });
-    wrap.appendChild(resetBtn);
   }
   render();
   return wrap;
@@ -91,7 +81,7 @@ function showForEntity(entityId: string, x: number, y: number): void {
   show([
     { label: 'Edit Table', onClick: () => modalEntity.open(entityId) },
     { label: 'Create DDL', onClick: () => ddlExport.open(entityId) },
-    { label: 'Delete table', danger: true, onClick: () => state.removeEntity(entityId) }
+    { label: 'Delete table', danger: true, sepBefore: true, onClick: () => state.removeEntity(entityId) }
   ], x, y, buildPaletteHeader(entity));
 }
 

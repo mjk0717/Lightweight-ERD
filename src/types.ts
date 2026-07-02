@@ -172,5 +172,6 @@ export interface ModalHandle {
 export interface ContextMenuItem {
   label: string;
   danger?: boolean;
+  sepBefore?: boolean;
   onClick: () => void;
 }

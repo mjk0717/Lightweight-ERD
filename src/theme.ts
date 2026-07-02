@@ -23,8 +23,10 @@ export const theme = {
   fontFamily: '"Segoe UI", Arial, sans-serif'
 } as const;
 
-// Preset choices offered in the table header color palette (entity modal).
+// Preset choices offered in the table header color palette (entity modal and
+// context menu) - blue (the default header color) is a plain, explicit
+// swatch here too, not a separate "reset to default" button.
 export const HEADER_COLOR_PALETTE: string[] = [
-  '#dc2626', '#d97706', '#16a34a',
+  '#2d6cdf', '#dc2626', '#d97706', '#16a34a',
   '#0891b2', '#7c3aed', '#db2777', '#475569'
 ];

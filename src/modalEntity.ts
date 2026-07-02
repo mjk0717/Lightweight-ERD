@@ -242,13 +242,6 @@ function buildBody(entity: Entity): HTMLElement {
       swatch.addEventListener('click', () => { draft!.headerColor = color; renderPalette(); });
       palette.appendChild(swatch);
     });
-    const resetBtn = document.createElement('button');
-    resetBtn.type = 'button';
-    resetBtn.className = 'color-swatch color-swatch-reset' + (!draft!.headerColor ? ' selected' : '');
-    resetBtn.title = 'Default';
-    resetBtn.textContent = '✕';
-    resetBtn.addEventListener('click', () => { draft!.headerColor = null; renderPalette(); });
-    palette.appendChild(resetBtn);
   }
   renderPalette();
   wrap.appendChild(palette);

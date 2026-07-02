@@ -188,8 +188,6 @@ body { display: flex; flex-direction: column; }
   border: 2px solid transparent; cursor: pointer; padding: 0;
 }
 .color-swatch.selected { border-color: #1e293b; box-shadow: 0 0 0 1px #fff inset; }
-.color-swatch-reset { background: #fff; border: 1px solid #cbd5e1; color: #94a3b8; font-size: 11px; line-height: 18px; }
-.color-swatch-reset.selected { border-color: #1e293b; }
 
 /* Excel-like: gridlines come from the cell borders, not from each input
    looking like its own little boxed textbox - inputs sit flush and
