@@ -102,8 +102,17 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
       return;
     }
 
-    if ((cm = c.match(/^CONSTRAINT\s+(?:"[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i)) ||
-        (cm = c.match(/^FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
+    if ((cm = c.match(/^CONSTRAINT\s+("[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
+      inlineFks.push({
+        table: tableName,
+        name: stripQuotes(cm[1]),
+        columns: parseColumnList(cm[2]),
+        refTable: parseQualifiedName(cm[3]),
+        refColumns: parseColumnList(cm[4])
+      });
+      return;
+    }
+    if ((cm = c.match(/^FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
       inlineFks.push({
         table: tableName,
         columns: parseColumnList(cm[1]),
@@ -186,13 +195,14 @@ function parseCommentOnColumn(stmt: string): { table: string; column: string; co
 }
 
 function parseAlterTableFk(stmt: string): DdlFkCandidate | null {
-  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+ADD\s+CONSTRAINT\s+(?:"[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i);
+  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+ADD\s+CONSTRAINT\s+("[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i);
   if (!m) return null;
   return {
     table: parseQualifiedName(m[1]),
-    columns: parseColumnList(m[2]),
-    refTable: parseQualifiedName(m[3]),
-    refColumns: parseColumnList(m[4])
+    name: stripQuotes(m[2]),
+    columns: parseColumnList(m[3]),
+    refTable: parseQualifiedName(m[4]),
+    refColumns: parseColumnList(m[5])
   };
 }
 
@@ -313,7 +323,7 @@ export function parse(rawText: string, existingTableNames: string[] = []): DdlPa
       sourceColumns: fk.columns,
       targetTable: dstTable ? dstTable.name : fk.refTable,
       targetColumns: fk.refColumns,
-      name: ''
+      name: fk.name || ''
     });
   }
 

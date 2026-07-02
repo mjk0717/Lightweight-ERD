@@ -149,6 +149,7 @@ export interface DdlParseResult {
 
 export interface DdlFkCandidate {
   table: string;
+  name?: string;
   columns: string[];
   refTable: string;
   refColumns: string[];
