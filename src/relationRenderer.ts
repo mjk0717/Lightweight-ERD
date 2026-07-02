@@ -355,11 +355,11 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
     const sourceHandlePt = handleAnchor(geom.aPt, geom.aSide);
     const targetHandlePt = handleAnchor(geom.bPt, geom.bSide);
     handles.appendChild(el('circle', {
-      class: 'relation-handle', 'data-end': 'source', cx: sourceHandlePt.x, cy: sourceHandlePt.y, r: 6,
+      class: 'relation-handle', 'data-end': 'source', 'data-side': geom.aSide, cx: sourceHandlePt.x, cy: sourceHandlePt.y, r: 6,
       fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
     }));
     handles.appendChild(el('circle', {
-      class: 'relation-handle', 'data-end': 'target', cx: targetHandlePt.x, cy: targetHandlePt.y, r: 6,
+      class: 'relation-handle', 'data-end': 'target', 'data-side': geom.bSide, cx: targetHandlePt.x, cy: targetHandlePt.y, r: 6,
       fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
     }));
   }
@@ -409,12 +409,10 @@ function render(): void {
   });
 }
 
-function setTempLine(fromPt: Point, toPt: Point): void {
+function setTempLine(fromPt: Point, fromSide: AnchorSide, toPt: Point, toSide: AnchorSide): void {
   tempGroup.style.display = '';
   tempGroup.innerHTML = '';
-  const side = toPt.x >= fromPt.x ? 'right' : 'left';
-  const otherSide = side === 'right' ? 'left' : 'right';
-  const path = linePath(fromPt, side, toPt, otherSide, false);
+  const path = linePath(fromPt, fromSide, toPt, toSide, false);
   const p = el('path', { d: path.d, fill: 'none', stroke: theme.colors.relationStrokeHover, 'stroke-width': 2, 'stroke-dasharray': '5,4' });
   tempGroup.appendChild(p);
 }
@@ -450,13 +448,14 @@ function onHandleMouseDown(e: MouseEvent): void {
   const otherHandle = g.querySelector('.relation-handle[data-end="' + (end === 'source' ? 'target' : 'source') + '"]') as SVGCircleElement | null;
   if (!otherHandle) return;
   const fixedPt = { x: Number(otherHandle.getAttribute('cx')), y: Number(otherHandle.getAttribute('cy')) };
+  const fixedSide = otherHandle.getAttribute('data-side') as AnchorSide;
 
   let lastAnchor: Anchor | undefined;
 
   function onMove(ev: MouseEvent): void {
     const world = viewport.screenToWorld(ev.clientX, ev.clientY);
     lastAnchor = nearestAnchor(box!, world);
-    setTempLine(fixedPt, pointOnSide(box!, lastAnchor.side, lastAnchor.t));
+    setTempLine(fixedPt, fixedSide, pointOnSide(box!, lastAnchor.side, lastAnchor.t), lastAnchor.side);
   }
   function onUp(): void {
     document.removeEventListener('mousemove', onMove);

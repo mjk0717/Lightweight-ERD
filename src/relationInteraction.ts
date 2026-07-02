@@ -178,7 +178,9 @@ function start(entityId: string, startEvent: MouseEvent): void {
     const mouseWorld = viewport.screenToWorld(ev.clientX, ev.clientY);
     const side = mouseWorld.x >= box!.x + box!.w / 2 ? 'right' : 'left';
     const anchor = { x: side === 'right' ? box!.x + box!.w : box!.x, y: anchorYFor(mouseWorld.y) };
-    relationRenderer.setTempLine(anchor, mouseWorld);
+    // The far end is just wherever the cursor is - no real entity there yet
+    // to derive a side from, so it's drawn as if it were the opposite side.
+    relationRenderer.setTempLine(anchor, side, mouseWorld, side === 'right' ? 'left' : 'right');
   }
 
   function onUp(ev: MouseEvent): void {
