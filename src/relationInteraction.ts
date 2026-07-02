@@ -44,7 +44,7 @@ function findOrCreateFkColumn(sourceEntityId: string, targetColumn: Column, targ
   }
   const newCol: Column = {
     id: nextId('col'), name: plan.name, dataType: targetColumn.dataType,
-    comment: 'FK -> ' + targetEntityName, pk: true, fk: true, nullable: false, isSystem: false, systemColId: null
+    comment: '', pk: true, fk: true, nullable: false, isSystem: false, systemColId: null
   };
   state.addColumn(sourceEntityId, newCol);
   return newCol.id;
