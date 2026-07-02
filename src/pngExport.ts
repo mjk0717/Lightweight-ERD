@@ -177,7 +177,12 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
   ctx.moveTo(geom.aPt.x, geom.aPt.y);
   ctx.lineTo(markerA.x, markerA.y);
 
-  const isSelf = relation.sourceEntityId === relation.targetEntityId;
+  // The circular-arc treatment only makes sense when both ends share the
+  // same edge (see relationRenderer.ts's selfLoopPath) - if they've been
+  // dragged onto different edges, fall through to the ordinary bezier/
+  // angular routing below, which already handles two independent outward
+  // directions correctly.
+  const isSelf = relation.sourceEntityId === relation.targetEntityId && geom.aSide === geom.bSide;
   let mid: Point;
   if (isSelf) {
     // Self-referencing relations attach both ends to the same edge - draw a

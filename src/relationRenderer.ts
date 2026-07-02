@@ -182,12 +182,20 @@ function angularPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSid
 // ends push out in the same direction, producing a flattened, kinked shape
 // rather than a clean loop. Drawn as an exception: a proper circular arc
 // bulging out from the edge, regardless of the current line-style setting.
-function selfLoopPath(aPt: Point, bPt: Point, side: AnchorSide) {
-  const markerA = markerAnchor(aPt, side);
-  const markerB = markerAnchor(bPt, side);
+// The circular-arc treatment only makes sense when both ends share the same
+// edge (the default before either is manually dragged) - the two markers'
+// outward directions are then perpendicular to the chord between them, so a
+// single "bulge in this direction" arc is well-defined. If they've been
+// dragged onto different edges (e.g. top and left), that assumption breaks;
+// fall back to the ordinary per-side bezier routing, which already handles
+// two independent outward directions correctly.
+function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
+  if (aSide !== bSide) return bezierPath(aPt, aSide, bPt, bSide);
+  const markerA = markerAnchor(aPt, aSide);
+  const markerB = markerAnchor(bPt, bSide);
   const chord = Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y);
   const r = Math.max(chord / 2, 40);
-  const dir = sideDir(side);
+  const dir = sideDir(aSide);
   const chordMidX = (markerA.x + markerB.x) / 2, chordMidY = (markerA.y + markerB.y) / 2;
   return {
     d: 'M ' + aPt.x + ' ' + aPt.y +
@@ -199,7 +207,7 @@ function selfLoopPath(aPt: Point, bPt: Point, side: AnchorSide) {
 }
 
 function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, isSelf: boolean) {
-  if (isSelf) return selfLoopPath(aPt, bPt, aSide);
+  if (isSelf) return selfLoopPath(aPt, aSide, bPt, bSide);
   return state.data.lineStyle === 'angular' ? angularPath(aPt, aSide, bPt, bSide) : bezierPath(aPt, aSide, bPt, bSide);
 }
 
