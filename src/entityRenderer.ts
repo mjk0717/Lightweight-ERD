@@ -112,8 +112,32 @@ function updateEntityNode(node: HTMLElement, entity: Entity): void {
     });
   }
 
+  // Columns involved in the currently-selected relation (on the side this
+  // entity plays, parent or child) get a highlight. A plain class toggle on
+  // the existing row elements, deliberately outside the rebuild-skip check
+  // above, so it stays responsive even when the row markup itself didn't
+  // change - and never disturbs row identity for double-click purposes.
+  const hlIds = highlightedColumnIds(entity.id);
+  Array.prototype.forEach.call(body.children, (row: HTMLElement) => {
+    const colId = row.dataset.colId;
+    row.classList.toggle('row-highlighted', !!colId && hlIds.has(colId));
+  });
+
   const selected = state.data.selected;
   node.classList.toggle('selected', !!(selected && selected.type === 'entity' && selected.id === entity.id));
+}
+
+function highlightedColumnIds(entityId: string): Set<string> {
+  const selected = state.data.selected;
+  if (!selected || selected.type !== 'relation') return new Set();
+  const relation = state.getRelation(selected.id);
+  if (!relation) return new Set();
+  const ids = new Set<string>();
+  relation.columnPairs.forEach((p) => {
+    if (relation.sourceEntityId === entityId) ids.add(p.sourceColumnId);
+    if (relation.targetEntityId === entityId) ids.add(p.targetColumnId);
+  });
+  return ids;
 }
 
 function render(): void {
