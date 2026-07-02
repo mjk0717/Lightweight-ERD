@@ -231,6 +231,7 @@ body { display: flex; flex-direction: column; }
 .sys-col-grid td, .sys-col-grid th { padding: 4px 6px; }
 
 /* ---------- ddl export (bulk) ---------- */
+.ddl-export-fk-toggle { margin-bottom: 10px; font-weight: 600; }
 .ddl-export-grid { display: flex; gap: 14px; align-items: stretch; }
 .ddl-export-list {
   flex: 0 0 180px; overflow: auto; max-height: 420px;

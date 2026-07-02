@@ -1,7 +1,7 @@
 import { state } from './state';
 import { modal } from './modal';
 import { escapeHtml } from './util';
-import { Entity } from './types';
+import { Column, Entity, Relation } from './types';
 
 function escapeSqlString(s: string): string {
   return s.replace(/'/g, "''");
@@ -31,6 +31,18 @@ function generateDdl(entity: Entity): string {
   return statements.join('\n\n');
 }
 
+// ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ... REFERENCES ... for one
+// relation - kept separate from generateDdl() since FK export is opt-in
+// (the bulk export's "Include FK constraints" checkbox).
+function generateFkConstraintDdl(relation: Relation, sourceEntity: Entity, targetEntity: Entity): string {
+  const sourceCols = relation.columnPairs.map((p) => sourceEntity.columns.find((c) => c.id === p.sourceColumnId)).filter((c): c is Column => !!c);
+  const targetCols = relation.columnPairs.map((p) => targetEntity.columns.find((c) => c.id === p.targetColumnId)).filter((c): c is Column => !!c);
+  const constraintName = relation.name || (sourceEntity.name + '_' + targetEntity.name + '_FK');
+  return 'ALTER TABLE "' + sourceEntity.name + '" ADD CONSTRAINT "' + constraintName + '" FOREIGN KEY (' +
+    sourceCols.map((c) => '"' + c.name + '"').join(', ') + ') REFERENCES "' + targetEntity.name + '" (' +
+    targetCols.map((c) => '"' + c.name + '"').join(', ') + ');';
+}
+
 function copyToClipboard(text: string): void {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
@@ -58,24 +70,36 @@ function openBulk(): void {
   if (!entities.length) { window.alert('There are no tables to export.'); return; }
 
   const body = document.createElement('div');
-  body.className = 'ddl-export-grid';
   body.innerHTML =
-    '<div class="ddl-export-list">' +
-      entities.map((e) =>
-        '<label class="col-check-row"><input type="checkbox" class="f-ddl-check" value="' + e.id + '" checked> ' + escapeHtml(e.name) + '</label>'
-      ).join('') +
-    '</div>' +
-    '<textarea class="f-ddl-output" rows="20" readonly></textarea>';
+    '<label class="col-check-row ddl-export-fk-toggle"><input type="checkbox" class="f-ddl-include-fk" checked> Include FK constraints (ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...)</label>' +
+    '<div class="ddl-export-grid">' +
+      '<div class="ddl-export-list">' +
+        entities.map((e) =>
+          '<label class="col-check-row"><input type="checkbox" class="f-ddl-check" value="' + e.id + '" checked> ' + escapeHtml(e.name) + '</label>'
+        ).join('') +
+      '</div>' +
+      '<textarea class="f-ddl-output" rows="20" readonly></textarea>' +
+    '</div>';
 
   const checks = Array.from(body.querySelectorAll('.f-ddl-check')) as HTMLInputElement[];
+  const fkToggle = body.querySelector('.f-ddl-include-fk') as HTMLInputElement;
   const textarea = body.querySelector('.f-ddl-output') as HTMLTextAreaElement;
 
   function currentDdl(): string {
     const checkedIds = new Set(checks.filter((c) => c.checked).map((c) => c.value));
-    return entities.filter((e) => checkedIds.has(e.id)).map((e) => generateDdl(e)).join('\n\n');
+    const parts = entities.filter((e) => checkedIds.has(e.id)).map((e) => generateDdl(e));
+    if (fkToggle.checked) {
+      state.data.relations.forEach((r) => {
+        if (!checkedIds.has(r.sourceEntityId) || !checkedIds.has(r.targetEntityId)) return;
+        const src = state.getEntity(r.sourceEntityId), tgt = state.getEntity(r.targetEntityId);
+        if (src && tgt) parts.push(generateFkConstraintDdl(r, src, tgt));
+      });
+    }
+    return parts.join('\n\n');
   }
   function updateOutput(): void { textarea.value = currentDdl(); }
   checks.forEach((c) => c.addEventListener('change', updateOutput));
+  fkToggle.addEventListener('change', updateOutput);
   updateOutput();
 
   modal.open({
