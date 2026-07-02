@@ -181,22 +181,6 @@ function reorderColumns(entityId: string, orderedIds: string[]): void {
   notify('change');
 }
 
-// Repositions an existing column to sit right after the table's other PK
-// columns - used when a plain attribute gets promoted to part of the PK
-// (e.g. reusing it as the FK of a newly identifying relationship).
-function moveColumnAfterPkBlock(entityId: string, colId: string): void {
-  const e = getEntity(entityId);
-  if (!e) return;
-  const col = e.columns.find((c) => c.id === colId);
-  if (!col) return;
-  const rest = e.columns.filter((c) => c.id !== colId);
-  let insertAt = 0;
-  rest.forEach((c, i) => { if (c.pk) insertAt = i + 1; });
-  rest.splice(insertAt, 0, col);
-  e.columns = rest;
-  notify('change');
-}
-
 // ---- relations ----
 function getRelation(id: string): Relation | undefined {
   return data.relations.find((r) => r.id === id);
@@ -280,7 +264,7 @@ export const state = {
   select, clearSelection, setDesignMode, setLineStyle,
   nextEntityPosition,
   addEntity, getEntity, updateEntity, removeEntity, moveEntity,
-  getColumn, addColumn, updateColumn, removeColumn, reorderColumns, moveColumnAfterPkBlock,
+  getColumn, addColumn, updateColumn, removeColumn, reorderColumns,
   addRelation, getRelation, updateRelation, removeRelation, relationExists, relationExistsWithPairs,
   setSystemColumns, applySystemColumnsToEntity
 };

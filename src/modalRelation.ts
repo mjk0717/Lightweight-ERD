@@ -26,7 +26,10 @@ function defaultTargetColumnIds(entity: Entity): string[] {
 
 function previewLine(sourceEntity: Entity, targetColumn: Column, targetEntityName: string): string {
   const plan = relationInteraction.planFkColumn(sourceEntity.id, targetColumn, targetEntityName);
-  if (!plan.isNew) return 'Existing column "' + plan.name + '" on ' + sourceEntity.name + ' will be marked as FK and join its primary key.';
+  // A same-name match here is never a PK (planFkColumn excludes PK columns
+  // from auto-reuse), so it stays exactly as it is - just gets fk:true,
+  // making this a non-identifying relationship, no column movement.
+  if (!plan.isNew) return 'Existing column "' + plan.name + '" on ' + sourceEntity.name + ' will be marked as FK (non-identifying) - no change to its position or PK status.';
   return 'New FK column "' + plan.name + '" (' + targetColumn.dataType + ') will be added to ' + sourceEntity.name + ' as part of its primary key.';
 }
 
@@ -101,7 +104,10 @@ function openCreate(sourceEntityId: string, targetEntityId: string): void {
       const lines = cols.map((tCol) => {
         const sel = mappingWrap.querySelector('.f-map-col[data-target-col-id="' + tCol.id + '"]') as HTMLSelectElement | null;
         const sCol = sel && sourceEntity!.columns.find((c) => c.id === sel.value);
-        return sCol ? 'Column "' + sCol.name + '" on ' + sourceEntity!.name + ' will be marked as FK and join its primary key.' : '';
+        if (!sCol) return '';
+        return sCol.pk
+          ? 'Column "' + sCol.name + '" on ' + sourceEntity!.name + ' will be marked as FK (identifying - already PK, no change to its position).'
+          : 'Column "' + sCol.name + '" on ' + sourceEntity!.name + ' will be marked as FK (non-identifying) - no change to its position or PK status.';
       });
       previewEl.textContent = lines.filter(Boolean).join('\n');
       return;

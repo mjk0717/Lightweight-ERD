@@ -28,20 +28,19 @@ function planFkColumn(sourceEntityId: string, targetColumn: Column, targetEntity
   return { isNew: true, name: candidateName };
 }
 
-// Turns an existing column into the relation's FK column, following the
-// same rule new FK columns get: relations are identifying by default, so
-// the column also joins the child's PK block and becomes NOT NULL. Shared
-// by the auto find-or-create path and by explicitly picking an existing
-// column in the create-relation modal, so both go through one process.
-function markColumnAsFk(sourceEntityId: string, colId: string): void {
-  state.updateColumn(sourceEntityId, colId, { fk: true, pk: true, nullable: false });
-  state.moveColumnAfterPkBlock(sourceEntityId, colId);
+// Reuses an existing column as the relation's FK column as-is: only fk is
+// set. Its current PK status decides identifying (already PK) vs
+// non-identifying (not PK) - neither is forced - and it stays exactly where
+// it already is, no repositioning. Shared by the auto find-or-create path
+// and by explicitly picking an existing column in the create-relation modal.
+function reuseColumnAsFk(sourceEntityId: string, colId: string): void {
+  state.updateColumn(sourceEntityId, colId, { fk: true });
 }
 
 function findOrCreateFkColumn(sourceEntityId: string, targetColumn: Column, targetEntityName: string): string {
   const plan = planFkColumn(sourceEntityId, targetColumn, targetEntityName);
   if (!plan.isNew) {
-    markColumnAsFk(sourceEntityId, plan.existingId!);
+    reuseColumnAsFk(sourceEntityId, plan.existingId!);
     return plan.existingId!;
   }
   const newCol: Column = {
@@ -83,7 +82,7 @@ function commit(opts: CommitOptions): Relation | null {
     const explicitSourceColumnId = opts.explicitSourceColumnIds && opts.explicitSourceColumnIds[targetColumnId];
     let sourceColumnId: string;
     if (explicitSourceColumnId) {
-      markColumnAsFk(opts.sourceEntityId, explicitSourceColumnId);
+      reuseColumnAsFk(opts.sourceEntityId, explicitSourceColumnId);
       sourceColumnId = explicitSourceColumnId;
     } else {
       sourceColumnId = findOrCreateFkColumn(opts.sourceEntityId, targetColumn, targetEntity.name);
