@@ -82,8 +82,11 @@ function start(entityId: string, colId: string): void {
     const targetEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
     const entityNode = targetEl && closest(targetEl, (el) => el.classList && el.classList.contains('entity'));
     if (!entityNode) return;
-    const targetEntityId = entityNode.dataset.entityId!;
-    modalRelation.openCreate(entityId, targetEntityId);
+    // Dragging goes parent -> child: the entity you start on is the "one"
+    // side being referenced, the entity you drop onto is the "many" side
+    // that receives the FK column.
+    const droppedEntityId = entityNode.dataset.entityId!;
+    modalRelation.openCreate(droppedEntityId, entityId);
   }
 
   document.addEventListener('mousemove', onMove);

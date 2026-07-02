@@ -38,7 +38,12 @@ function bezierPointAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): P
 
 interface Endpoints { aPt: Point; bPt: Point; aSide: 'left' | 'right'; bSide: 'left' | 'right'; }
 
-function computeEndpoints(aBox: Box, aRowY: number, bBox: Box, bRowY: number): Endpoints {
+function computeEndpoints(aBox: Box, aRowY: number, bBox: Box, bRowY: number, isSelf: boolean): Endpoints {
+  if (isSelf) {
+    const aPt = { x: aBox.x + aBox.w, y: aRowY };
+    const bPt = { x: bBox.x + bBox.w, y: bRowY };
+    return { aPt, bPt, aSide: 'right', bSide: 'right' };
+  }
   const aCenterX = aBox.x + aBox.w / 2, bCenterX = bBox.x + bBox.w / 2;
   let aSide: 'left' | 'right', bSide: 'left' | 'right';
   if (aCenterX <= bCenterX) { aSide = 'right'; bSide = 'left'; } else { aSide = 'left'; bSide = 'right'; }
@@ -55,7 +60,7 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
   const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, relation.targetColumnId);
   if (!aRow || !bRow) return;
 
-  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y);
+  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, relation.sourceEntityId === relation.targetEntityId);
   const dx = Math.max(Math.abs(geom.bPt.x - geom.aPt.x) * 0.5, 50);
   const c1 = { x: geom.aPt.x + (geom.aSide === 'right' ? dx : -dx), y: geom.aPt.y };
   const c2 = { x: geom.bPt.x + (geom.bSide === 'right' ? dx : -dx), y: geom.bPt.y };
@@ -70,7 +75,7 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
   // crow's foot (many) at source end
   const dirA = geom.aSide === 'right' ? 1 : -1;
   const backA = { x: geom.aPt.x + dirA * 12, y: geom.aPt.y };
-  [-6, 0, 6].forEach((off) => {
+  [-6, 6].forEach((off) => {
     ctx.beginPath();
     ctx.moveTo(backA.x, backA.y + off);
     ctx.lineTo(geom.aPt.x, geom.aPt.y);

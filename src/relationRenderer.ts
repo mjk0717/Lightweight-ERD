@@ -25,8 +25,15 @@ interface Endpoints {
 }
 
 // Decide which vertical edge of each box the connector attaches to, based
-// on the relative horizontal position of the two boxes.
-function computeEndpoints(aBox: Box, aRowY: number, bBox: Box, bRowY: number): Endpoints {
+// on the relative horizontal position of the two boxes. Self-referencing
+// relations (same entity on both ends) attach both points to the same edge
+// so the curve loops out and back around instead of cutting through the box.
+function computeEndpoints(aBox: Box, aRowY: number, bBox: Box, bRowY: number, isSelf: boolean): Endpoints {
+  if (isSelf) {
+    const aPt = { x: aBox.x + aBox.w, y: aRowY };
+    const bPt = { x: bBox.x + bBox.w, y: bRowY };
+    return { aPt, bPt, aSide: 'right', bSide: 'right' };
+  }
   const aCenterX = aBox.x + aBox.w / 2, bCenterX = bBox.x + bBox.w / 2;
   let aSide: 'left' | 'right', bSide: 'left' | 'right';
   if (aCenterX <= bCenterX) { aSide = 'right'; bSide = 'left'; } else { aSide = 'left'; bSide = 'right'; }
@@ -58,7 +65,7 @@ function crowFoot(point: Point, side: 'left' | 'right'): SVGGElement {
   const dir = side === 'right' ? 1 : -1;
   const back = { x: point.x + dir * 12, y: point.y };
   const g = el('g', { class: 'crowfoot' });
-  [-6, 0, 6].forEach((off) => {
+  [-6, 6].forEach((off) => {
     g.appendChild(el('line', {
       x1: back.x, y1: back.y + off, x2: point.x, y2: point.y,
       stroke: theme.colors.relationStroke, 'stroke-width': 1.5
@@ -97,7 +104,7 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
   const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, relation.targetColumnId);
   if (!aRow || !bRow) { node.style.display = 'none'; return; }
 
-  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y);
+  const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, relation.sourceEntityId === relation.targetEntityId);
   const path = bezierPath(geom.aPt, geom.aSide, geom.bPt, geom.bSide);
 
   const selected = state.data.selected;

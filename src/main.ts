@@ -55,10 +55,9 @@ function init(): void {
   document.addEventListener('keydown', onKeydown);
 
   const hint = document.getElementById('empty-hint')!;
-  if (!state.data.entities.length) hint.style.display = '';
-  state.on('change', () => {
-    hint.style.display = state.data.entities.length ? 'none' : '';
-  });
+  const syncHint = () => { hint.style.display = state.data.entities.length ? 'none' : ''; };
+  syncHint();
+  state.on('change', syncHint);
 }
 
 document.addEventListener('DOMContentLoaded', init);
