@@ -6,6 +6,7 @@ import { relationRenderer } from './relationRenderer';
 import { relationInteraction } from './relationInteraction';
 import { toolbar } from './toolbar';
 import { menuBar } from './menuBar';
+import { minimap } from './minimap';
 import { contextMenu } from './contextMenu';
 import { history } from './history';
 import { closest } from './util';
@@ -70,6 +71,7 @@ function init(): void {
   relationRenderer.init(svg);
   toolbar.init();
   menuBar.init();
+  minimap.init();
 
   viewportEl.addEventListener('click', onCanvasBackgroundClick);
   viewportEl.addEventListener('contextmenu', onCanvasBackgroundContextMenu);

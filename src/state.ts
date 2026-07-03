@@ -24,7 +24,8 @@ const data: AppData = {
   selected: null,
   selectedEntityIds: [],
   designMode: 'logical',
-  lineStyle: 'curved'
+  lineStyle: 'curved',
+  minimapVisible: true
 };
 
 const STORAGE_KEY = 'erd_tool_state_v1';
@@ -37,7 +38,8 @@ function persist(): void {
       systemColumns: data.systemColumns,
       view: data.view,
       designMode: data.designMode,
-      lineStyle: data.lineStyle
+      lineStyle: data.lineStyle,
+      minimapVisible: data.minimapVisible
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch (e) {
@@ -62,6 +64,7 @@ function load(): boolean {
     data.view = parsed.view || { scale: 1, x: 0, y: 0 };
     data.designMode = parsed.designMode || 'logical';
     data.lineStyle = parsed.lineStyle || 'curved';
+    data.minimapVisible = parsed.minimapVisible !== false;
     return true;
   } catch (e) {
     return false;
@@ -75,6 +78,7 @@ function replaceAll(next: Partial<SerializedState>): void {
   data.view = next.view || { scale: 1, x: 0, y: 0 };
   data.designMode = next.designMode || 'logical';
   data.lineStyle = next.lineStyle || 'curved';
+  data.minimapVisible = next.minimapVisible !== false;
   // A loaded project's ids have nothing to do with the previous selection.
   data.selected = null;
   data.selectedEntityIds = [];
@@ -88,6 +92,11 @@ function setDesignMode(mode: DesignMode): void {
 
 function setLineStyle(lineStyle: LineStyle): void {
   data.lineStyle = lineStyle;
+  notify('change');
+}
+
+function toggleMinimap(): void {
+  data.minimapVisible = !data.minimapVisible;
   notify('change');
 }
 
@@ -297,7 +306,7 @@ function clearSelection(): void {
 export const state = {
   data,
   on, off, emit: notify, load, persist, replaceAll,
-  select, clearSelection, toggleEntitySelection, isEntitySelected, setHeaderColorForEntities, setDesignMode, setLineStyle,
+  select, clearSelection, toggleEntitySelection, isEntitySelected, setHeaderColorForEntities, setDesignMode, setLineStyle, toggleMinimap,
   nextEntityPosition,
   addEntity, getEntity, updateEntity, removeEntity, moveEntity,
   getColumn, addColumn, updateColumn, removeColumn, reorderColumns,

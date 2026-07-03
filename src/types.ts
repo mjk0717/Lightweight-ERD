@@ -93,6 +93,7 @@ export interface AppData {
   selectedEntityIds: string[];
   designMode: DesignMode;
   lineStyle: LineStyle;
+  minimapVisible: boolean;
 }
 
 export interface SerializedState {
@@ -102,6 +103,7 @@ export interface SerializedState {
   view: ViewState;
   designMode: DesignMode;
   lineStyle: LineStyle;
+  minimapVisible?: boolean;
 }
 
 export interface Box {

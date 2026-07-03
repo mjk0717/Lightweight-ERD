@@ -57,6 +57,7 @@ const MENUS: MenuEntry[] = [
       { label: 'Physical', checked: () => state.data.designMode === 'physical', onClick: () => state.setDesignMode('physical') },
       { separator: true },
       { label: 'Reset view', onClick: () => viewport.resetView() },
+      { label: 'Minimap', checked: () => state.data.minimapVisible, onClick: () => state.toggleMinimap() },
       { separator: true },
       { label: 'Curved lines', checked: () => state.data.lineStyle === 'curved', onClick: () => state.setLineStyle('curved') },
       { label: 'Angular lines', checked: () => state.data.lineStyle === 'angular', onClick: () => state.setLineStyle('angular') }

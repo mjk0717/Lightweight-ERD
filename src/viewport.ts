@@ -15,11 +15,36 @@ let panning = false;
 let panStart: Point | null = null;
 let viewStart: Point | null = null;
 
+// Notified on every camera change (pan/zoom/reset). The minimap subscribes
+// so its viewport rectangle tracks the camera live, without routing camera
+// moves through state's change/persist machinery (which pans would spam).
+const viewChangeListeners: (() => void)[] = [];
+function onViewChange(cb: () => void): void { viewChangeListeners.push(cb); }
+
 function view() { return state.data.view; }
 
 function applyTransform(): void {
   const v = view();
   transformEl.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.scale + ')';
+  viewChangeListeners.slice().forEach((cb) => cb());
+}
+
+// The world-space rectangle currently visible in the viewport, and the
+// viewport's pixel size - used by the minimap to draw the camera box and to
+// center the camera on a clicked point.
+function visibleWorldRect(): { x: number; y: number; w: number; h: number } {
+  const v = view();
+  const w = viewportEl.clientWidth, h = viewportEl.clientHeight;
+  return { x: -v.x / v.scale, y: -v.y / v.scale, w: w / v.scale, h: h / v.scale };
+}
+
+// Recenters the camera on a world point, keeping the current zoom.
+function centerOnWorld(wx: number, wy: number): void {
+  const v = view();
+  v.x = viewportEl.clientWidth / 2 - wx * v.scale;
+  v.y = viewportEl.clientHeight / 2 - wy * v.scale;
+  applyTransform();
+  state.persist();
 }
 
 function screenToWorld(clientX: number, clientY: number): Point {
@@ -117,4 +142,4 @@ function init(viewport: HTMLElement, transform: HTMLElement): void {
   applyTransform();
 }
 
-export const viewport = { init, applyTransform, screenToWorld, resetView };
+export const viewport = { init, applyTransform, screenToWorld, resetView, onViewChange, visibleWorldRect, centerOnWorld };
