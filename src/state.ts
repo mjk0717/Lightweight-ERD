@@ -41,7 +41,7 @@ function persist(): void {
       lineStyle: data.lineStyle,
       minimapVisible: data.minimapVisible
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch (e) {
     // storage unavailable/full - non-fatal, editing still works this session
   }
@@ -55,7 +55,7 @@ function notify(evt: EventName = 'change'): void {
 
 function load(): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
     const parsed = JSON.parse(raw) as Partial<SerializedState>;
     data.entities = parsed.entities || [];

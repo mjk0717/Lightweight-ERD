@@ -33,10 +33,9 @@ No install, no server, no accounts — [**try it right now in your browser →**
 - **DDL import** — parses `CREATE TABLE`, `COMMENT ON`, and `ALTER TABLE ... ADD CONSTRAINT` (including the multi-constraint `ADD ( ... )` form), correctly wiring FKs even across separate imports
 - **Reverse engineering** — one-query catalog-extraction SQL for Oracle / MySQL / PostgreSQL / SQL Server: run it against your database, paste the result, get your diagram
 - **Export** — PNG (relation-aware bounds, nothing clipped), bulk or per-table DDL (optional FK constraints), and JSON (full diagram state + undo history)
-- **Auto-load** — when served over http(s), an `erd-diagram.json` next to `index.html` is imported automatically on open and re-imported when it changes; a plain refresh keeps your in-progress edits
 - **System columns** — define common audit columns (`CREATED_BY`, `CREATED_DATE`, ...) once and apply them to every table, edited in the same spreadsheet-style grid
 - **Undo/redo** — app-wide Ctrl+Z / Ctrl+Y covering every canvas action, persisted across page refreshes (last 50 steps)
-- **Fully offline** — no network calls, no telemetry; state persists in `localStorage`
+- **Fully offline** — no network calls, no telemetry; state persists in `sessionStorage` for the tab (use `Export JSON` to keep a diagram beyond the session)
 
 ## Getting Started
 

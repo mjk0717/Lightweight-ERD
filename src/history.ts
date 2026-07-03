@@ -9,9 +9,10 @@ import { HistorySnapshot, HistoryData } from './types';
 // rapid-fire updates (a drag, a multi-step import) settle into one step
 // instead of one per intermediate event.
 //
-// The stack is persisted to its own localStorage key (capped at
+// The stack is persisted to its own sessionStorage key (capped at
 // MAX_HISTORY full-document snapshots) so undo/redo survives a page
-// refresh - not just the current document, saved separately by state.ts.
+// refresh within the tab - not just the current document, saved separately
+// by state.ts.
 
 type Snapshot = HistorySnapshot;
 
@@ -34,7 +35,7 @@ function cloneSnapshot(): Snapshot {
 
 function persistHistory(): void {
   try {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({ stack, index }));
+    sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({ stack, index }));
   } catch (e) {
     // storage unavailable/full - non-fatal, undo/redo still works this session
   }
@@ -43,7 +44,7 @@ const persistHistoryDebounced = debounce(persistHistory, DEBOUNCE_MS);
 
 function loadHistory(): boolean {
   try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const raw = sessionStorage.getItem(HISTORY_STORAGE_KEY);
     if (!raw) return false;
     const parsed = JSON.parse(raw) as { stack: Snapshot[]; index: number };
     if (!Array.isArray(parsed.stack) || typeof parsed.index !== 'number' || !parsed.stack.length) return false;
