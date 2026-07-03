@@ -21,24 +21,28 @@ function schemaOf(schema: string): string {
 const GENERATORS: Record<DbVendor, (schema: string) => string> = {
   oracle(schema) {
     const s = schemaOf(schema);
-    // DBMS_METADATA.GET_DDL returns CLOB, so the comment branches are cast to
-    // CLOB too - Oracle's UNION ALL requires every branch of the same column
-    // to share a datatype, and mixing CLOB with VARCHAR2 is rejected.
-    return `-- Run once - UNION ALL keeps CREATE TABLE, table comments, and column
--- comments together in one result set (ORDER BY keeps tables first, since
--- COMMENT ON referencing a not-yet-seen table gets dropped on import)
-SELECT 1 AS ord, DBMS_METADATA.GET_DDL('TABLE', table_name) AS ddl
+    // Notes on the shape below:
+    // - GET_DDL takes the owner as its 3rd argument, so tables owned by a
+    //   schema other than the connected user still resolve (ORA-31603 otherwise).
+    // - GET_DDL does NOT emit a statement terminator, so '|| ';'' appends one;
+    //   without it the CREATE TABLE runs into the next row on import.
+    // - Every branch is a CLOB (comment branches wrapped in TO_CLOB) because
+    //   UNION ALL rejects mixing CLOB with VARCHAR2.
+    // - No ordering column is needed: the importer applies COMMENT ON only
+    //   after all tables are parsed, so row order doesn't matter.
+    return `-- Run once. CREATE TABLE (with PK/FK/unique constraints) plus table and
+-- column comments, each ';'-terminated so it pastes and imports cleanly.
+SELECT DBMS_METADATA.GET_DDL('TABLE', TABLE_NAME, OWNER) || ';' AS ddl
 FROM ALL_TABLES
 WHERE OWNER = '${s}'
 UNION ALL
-SELECT 2, TO_CLOB('COMMENT ON TABLE "' || TABLE_NAME || '" IS ''' || REPLACE(COMMENTS, '''', '''''') || ''';')
+SELECT TO_CLOB('COMMENT ON TABLE "' || OWNER || '"."' || TABLE_NAME || '" IS ''' || REPLACE(COMMENTS, '''', '''''') || ''';')
 FROM ALL_TAB_COMMENTS
 WHERE OWNER = '${s}' AND COMMENTS IS NOT NULL
 UNION ALL
-SELECT 3, TO_CLOB('COMMENT ON COLUMN "' || TABLE_NAME || '"."' || COLUMN_NAME || '" IS ''' || REPLACE(COMMENTS, '''', '''''') || ''';')
+SELECT TO_CLOB('COMMENT ON COLUMN "' || OWNER || '"."' || TABLE_NAME || '"."' || COLUMN_NAME || '" IS ''' || REPLACE(COMMENTS, '''', '''''') || ''';')
 FROM ALL_COL_COMMENTS
-WHERE OWNER = '${s}' AND COMMENTS IS NOT NULL
-ORDER BY ord;`;
+WHERE OWNER = '${s}' AND COMMENTS IS NOT NULL;`;
   },
   mysql(schema) {
     const s = schemaOf(schema);
@@ -49,14 +53,13 @@ FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = '${s}';
 
 -- 2) Table + column comments, combined via UNION ALL - run once
-SELECT 1 AS ord, CONCAT('COMMENT ON TABLE "', TABLE_NAME, '" IS ''', REPLACE(TABLE_COMMENT, '''', ''''''), ''';') AS ddl
+SELECT CONCAT('COMMENT ON TABLE "', TABLE_NAME, '" IS ''', REPLACE(TABLE_COMMENT, '''', ''''''), ''';') AS ddl
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = '${s}' AND TABLE_COMMENT <> ''
 UNION ALL
-SELECT 2, CONCAT('COMMENT ON COLUMN "', TABLE_NAME, '"."', COLUMN_NAME, '" IS ''', REPLACE(COLUMN_COMMENT, '''', ''''''), ''';')
+SELECT CONCAT('COMMENT ON COLUMN "', TABLE_NAME, '"."', COLUMN_NAME, '" IS ''', REPLACE(COLUMN_COMMENT, '''', ''''''), ''';')
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = '${s}' AND COLUMN_COMMENT <> ''
-ORDER BY ord;`;
+WHERE TABLE_SCHEMA = '${s}' AND COLUMN_COMMENT <> '';`;
   },
   postgres(schema) {
     const s = schemaOf(schema);
@@ -69,19 +72,18 @@ WHERE table_schema = '${s}'
 ORDER BY table_name, ordinal_position;
 
 -- 2) Table + column comments, combined via UNION ALL - run once
-SELECT 1 AS ord, 'COMMENT ON TABLE "' || c.relname || '" IS ''' || replace(d.description, '''', '''''') || ''';' AS ddl
+SELECT 'COMMENT ON TABLE "' || c.relname || '" IS ''' || replace(d.description, '''', '''''') || ''';' AS ddl
 FROM pg_class c
 JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = 0
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = '${s}'
 UNION ALL
-SELECT 2, 'COMMENT ON COLUMN "' || c.relname || '"."' || a.attname || '" IS ''' || replace(d.description, '''', '''''') || ''';'
+SELECT 'COMMENT ON COLUMN "' || c.relname || '"."' || a.attname || '" IS ''' || replace(d.description, '''', '''''') || ''';'
 FROM pg_class c
 JOIN pg_attribute a ON a.attrelid = c.oid
 JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = a.attnum
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = '${s}'
-ORDER BY ord;`;
+WHERE n.nspname = '${s}';`;
   },
   mssql(schema) {
     const s = schemaOf(schema);
@@ -94,17 +96,16 @@ ORDER BY TABLE_NAME, ORDINAL_POSITION;
 
 -- 2) Table + column comments (MS_Description extended property), combined
 --    via UNION ALL - run once
-SELECT 1 AS ord, 'COMMENT ON TABLE "' + t.name + '" IS ''' + REPLACE(CAST(ep.value AS NVARCHAR(MAX)), '''', '''''') + ''';' AS ddl
+SELECT 'COMMENT ON TABLE "' + t.name + '" IS ''' + REPLACE(CAST(ep.value AS NVARCHAR(MAX)), '''', '''''') + ''';' AS ddl
 FROM sys.tables t
 JOIN sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
 WHERE SCHEMA_NAME(t.schema_id) = '${s}'
 UNION ALL
-SELECT 2, 'COMMENT ON COLUMN "' + t.name + '"."' + c.name + '" IS ''' + REPLACE(CAST(ep.value AS NVARCHAR(MAX)), '''', '''''') + ''';'
+SELECT 'COMMENT ON COLUMN "' + t.name + '"."' + c.name + '" IS ''' + REPLACE(CAST(ep.value AS NVARCHAR(MAX)), '''', '''''') + ''';'
 FROM sys.tables t
 JOIN sys.columns c ON c.object_id = t.object_id
 JOIN sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
-WHERE SCHEMA_NAME(t.schema_id) = '${s}'
-ORDER BY ord;`;
+WHERE SCHEMA_NAME(t.schema_id) = '${s}';`;
   }
 };
 

@@ -243,6 +243,12 @@ export function parse(rawText: string, existingTableNames: string[] = []): DdlPa
   const tables: DdlTable[] = [];
   const fkCandidates: DdlFkCandidate[] = [];
   const pkUpdates: DdlPkUpdate[] = [];
+  // Comments are collected during the pass and applied only after every
+  // CREATE TABLE has been parsed, so a COMMENT ON that appears before its
+  // table in the pasted text (or in any order at all) still lands - the
+  // export SQL therefore needs no ordering column to keep tables first.
+  const tableComments: { table: string; comment: string }[] = [];
+  const columnComments: { table: string; column: string; comment: string }[] = [];
 
   statements.forEach((stmt) => {
     if (/^CREATE\s+TABLE\b/i.test(stmt)) {
@@ -252,19 +258,12 @@ export function parse(rawText: string, existingTableNames: string[] = []): DdlPa
     }
     if (/^COMMENT\s+ON\s+TABLE\b/i.test(stmt)) {
       const c = parseCommentOnTable(stmt);
-      if (c) {
-        const t = tables.find((t) => t.name.toUpperCase() === c.table.toUpperCase());
-        if (t) t.comment = c.comment;
-      }
+      if (c) tableComments.push(c);
       return;
     }
     if (/^COMMENT\s+ON\s+COLUMN\b/i.test(stmt)) {
       const c = parseCommentOnColumn(stmt);
-      if (c) {
-        const t = tables.find((t) => t.name.toUpperCase() === c.table.toUpperCase());
-        const col = t && t.columns.find((col) => col.name.toUpperCase() === c.column.toUpperCase());
-        if (col) col.comment = c.comment;
-      }
+      if (c) columnComments.push(c);
       return;
     }
     if (/^ALTER\s+TABLE\b\s*(?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?\s+ADD\s*\(/i.test(stmt)) {
@@ -293,6 +292,16 @@ export function parse(rawText: string, existingTableNames: string[] = []): DdlPa
     }
     // everything else (CREATE INDEX, CREATE SEQUENCE, CREATE OR REPLACE VIEW/TRIGGER,
     // GRANT, ALTER TABLE MODIFY/ENABLE/DISABLE, PARTITION BY, storage clauses...) is dropped.
+  });
+
+  tableComments.forEach((c) => {
+    const t = tables.find((t) => t.name.toUpperCase() === c.table.toUpperCase());
+    if (t) t.comment = c.comment;
+  });
+  columnComments.forEach((c) => {
+    const t = tables.find((t) => t.name.toUpperCase() === c.table.toUpperCase());
+    const col = t && t.columns.find((col) => col.name.toUpperCase() === c.column.toUpperCase());
+    if (col) col.comment = c.comment;
   });
 
   const relations: DdlRelation[] = [];
