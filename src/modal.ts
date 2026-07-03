@@ -119,10 +119,12 @@ function syncFooter(box: HTMLElement, actions: ModalAction[]): void {
 }
 
 // Swaps the current modal's title/body/footer in place for a wizard step
-// change - a plain instant replacement (no slide animation). Falls back to a
-// full open() when there's no modal to transition from (the wizard's first
-// step). The `_direction` argument is unused now that there's no animation;
-// it's kept so the wizard call sites don't all need touching.
+// change. The content is replaced instantly (no horizontal slide), but the
+// body's height animates from the old step's to the new step's so the modal
+// grows/shrinks smoothly. Falls back to a full open() when there's no modal
+// to transition from (the wizard's first step). The `_direction` argument is
+// unused now that there's no slide; it's kept so the wizard call sites don't
+// all need touching.
 function transition(opts: ModalOptions, _direction: 'left' | 'right'): ModalHandle {
   if (!current) return open(opts);
 
@@ -130,14 +132,36 @@ function transition(opts: ModalOptions, _direction: 'left' | 'right'): ModalHand
   const bodyEl = current.body;
   const titleEl = box.querySelector('.modal-title') as HTMLElement | null;
 
+  const oldHeight = bodyEl.getBoundingClientRect().height;
   if (opts.width) box.style.width = opts.width;
   if (titleEl) titleEl.textContent = opts.title || '';
   if (opts.body.querySelector('.wizard-steps')) box.classList.add('modal-wizard');
 
   bodyEl.innerHTML = '';
   bodyEl.appendChild(opts.body);
-
   syncFooter(box, opts.actions || []);
+  const newHeight = bodyEl.getBoundingClientRect().height;
+
+  // Animate the height change (only if it actually differs): pin to the old
+  // height, commit it, then transition to the new height and release back to
+  // auto once done.
+  if (Math.round(oldHeight) !== Math.round(newHeight)) {
+    bodyEl.style.height = oldHeight + 'px';
+    bodyEl.classList.add('modal-body-resizing');
+    void bodyEl.offsetWidth;
+    let done = false;
+    const finish = (e?: TransitionEvent): void => {
+      if (done || (e && e.propertyName !== 'height')) return;
+      done = true;
+      bodyEl.classList.remove('modal-body-resizing');
+      bodyEl.style.height = '';
+      bodyEl.removeEventListener('transitionend', finish);
+    };
+    bodyEl.addEventListener('transitionend', finish);
+    setTimeout(finish, 260);
+    requestAnimationFrame(() => { bodyEl.style.height = newHeight + 'px'; });
+  }
+
   current.onClose = opts.onClose;
   return { close, root: current.overlay, body: bodyEl };
 }
