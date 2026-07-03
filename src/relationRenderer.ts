@@ -101,6 +101,51 @@ function bezierPointAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): P
   };
 }
 
+// Polyline sample points for each connector shape, generated analytically
+// alongside the d string. Hop (line-crossing) detection used to re-derive
+// these from the DOM via getPointAtLength - which forces the browser to
+// re-flatten the whole path on every single call and was, by actual
+// profiling, ~90% of the per-mousemove cost when dragging a
+// heavily-connected entity. Pure math here is thousands of times cheaper.
+function cubicSamples(p0: Point, c1: Point, c2: Point, p3: Point): Point[] {
+  // Subdivision count scaled to the control polygon length (an upper bound
+  // on arc length) so long sweeping curves keep enough fidelity for
+  // crossing detection while short hops stay cheap.
+  const approxLen = Math.hypot(c1.x - p0.x, c1.y - p0.y) + Math.hypot(c2.x - c1.x, c2.y - c1.y) + Math.hypot(p3.x - c2.x, p3.y - c2.y);
+  const n = Math.max(16, Math.min(64, Math.ceil(approxLen / 8)));
+  const out: Point[] = [];
+  for (let i = 1; i <= n; i++) out.push(bezierPointAt(p0, c1, c2, p3, i / n));
+  return out;
+}
+
+// SVG endpoint-parameterized circular arc (rotation 0, rx = ry) sampled to
+// a polyline - replicates the spec's automatic radius scale-up when the
+// requested radius is too small to span the two endpoints.
+function arcSamples(p0: Point, p1: Point, r: number, largeArc: boolean, sweep: boolean): Point[] {
+  const dx = (p0.x - p1.x) / 2, dy = (p0.y - p1.y) / 2;
+  const dSq = dx * dx + dy * dy;
+  if (dSq < 1e-9) return [p1];
+  let rr = r;
+  const lambda = dSq / (rr * rr);
+  if (lambda > 1) rr = rr * Math.sqrt(lambda);
+  const sign = largeArc !== sweep ? 1 : -1;
+  const cc = sign * Math.sqrt(Math.max(0, (rr * rr - dSq) / dSq));
+  const cxp = cc * dy, cyp = -cc * dx;
+  const cx = cxp + (p0.x + p1.x) / 2, cy = cyp + (p0.y + p1.y) / 2;
+  const th0 = Math.atan2(dy - cyp, dx - cxp);
+  const th1 = Math.atan2(-dy - cyp, -dx - cxp);
+  let dth = th1 - th0;
+  if (!sweep && dth > 0) dth -= Math.PI * 2;
+  if (sweep && dth < 0) dth += Math.PI * 2;
+  const n = Math.max(12, Math.min(64, Math.ceil(Math.abs(dth) * rr / 8)));
+  const out: Point[] = [];
+  for (let i = 1; i <= n; i++) {
+    const th = th0 + dth * (i / n);
+    out.push({ x: cx + rr * Math.cos(th), y: cy + rr * Math.sin(th) });
+  }
+  return out;
+}
+
 // Crow's foot/one-many markers reach up to ~24px out from the entity edge
 // (see cardinalityMarker's distances below). The marker itself is drawn at
 // the actual entity edge (geom.aPt/bPt, see updateRelationNode) - this is
@@ -127,19 +172,44 @@ function handleAnchor(edge: Point, side: AnchorSide): Point {
   return { x: edge.x + dir.x * HANDLE_OFFSET, y: edge.y + dir.y * HANDLE_OFFSET };
 }
 
-function bezierPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
+function pointInBox(p: Point, box: Box, pad: number): boolean {
+  return p.x > box.x - pad && p.x < box.x + box.w + pad && p.y > box.y - pad && p.y < box.y + box.h + pad;
+}
+
+// Entities are HTML divs stacked above the relation SVG, so any stretch of
+// line that sweeps back across its own entity's box just vanishes
+// underneath the table. The curve is sampled analytically (pure math, no
+// DOM) and rebuilt with progressively longer control arms until its belly
+// clears the boxes it's attached to - each retry pushes the bend further
+// out, away from the entity. Capped retries: a layout where no arm length
+// escapes (heavily overlapping tables) keeps the widest attempt.
+function bezierPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, avoid?: Box[]) {
   const markerA = markerAnchor(aPt, aSide);
   const markerB = markerAnchor(bPt, bSide);
   const dirA = sideDir(aSide), dirB = sideDir(bSide);
-  const dist = Math.max(Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y) * 0.5, 50);
-  const c1 = { x: markerA.x + dirA.x * dist, y: markerA.y + dirA.y * dist };
-  const c2 = { x: markerB.x + dirB.x * dist, y: markerB.y + dirB.y * dist };
+  const base = Math.max(Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y) * 0.5, 50);
+  let c1 = { x: markerA.x + dirA.x * base, y: markerA.y + dirA.y * base };
+  let c2 = { x: markerB.x + dirB.x * base, y: markerB.y + dirB.y * base };
+  if (avoid && avoid.length) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const dist = base * (1 + attempt * 0.7);
+      c1 = { x: markerA.x + dirA.x * dist, y: markerA.y + dirA.y * dist };
+      c2 = { x: markerB.x + dirB.x * dist, y: markerB.y + dirB.y * dist };
+      let hitsBox = false;
+      for (let i = 1; i < 24 && !hitsBox; i++) {
+        const p = bezierPointAt(markerA, c1, c2, markerB, i / 24);
+        hitsBox = avoid.some((box) => pointInBox(p, box, -1));
+      }
+      if (!hitsBox) break;
+    }
+  }
   return {
     d: 'M ' + aPt.x + ' ' + aPt.y +
       ' L ' + markerA.x + ' ' + markerA.y +
       ' C ' + c1.x + ' ' + c1.y + ', ' + c2.x + ' ' + c2.y + ', ' + markerB.x + ' ' + markerB.y +
       ' L ' + bPt.x + ' ' + bPt.y,
-    mid: bezierPointAt(markerA, c1, c2, markerB, 0.5)
+    mid: bezierPointAt(markerA, c1, c2, markerB, 0.5),
+    samples: [aPt, markerA, ...cubicSamples(markerA, c1, c2, markerB), bPt]
   };
 }
 
@@ -174,7 +244,7 @@ function angularPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSid
   }
 
   const pts = [aPt, markerA, ...bends, markerB, bPt];
-  return { d: 'M ' + pts.map((p) => p.x + ' ' + p.y).join(' L '), mid };
+  return { d: 'M ' + pts.map((p) => p.x + ' ' + p.y).join(' L '), mid, samples: pts };
 }
 
 // Self-referencing (hierarchical) relations attach both ends to the same
@@ -195,7 +265,8 @@ function sameSideLoop(aPt: Point, markerA: Point, bPt: Point, markerB: Point, di
       ' L ' + markerA.x + ' ' + markerA.y +
       ' A ' + r + ' ' + r + ' 0 1 1 ' + markerB.x + ' ' + markerB.y +
       ' L ' + bPt.x + ' ' + bPt.y,
-    mid: { x: chordMidX + dir.x * r, y: chordMidY + dir.y * r }
+    mid: { x: chordMidX + dir.x * r, y: chordMidY + dir.y * r },
+    samples: [aPt, markerA, ...arcSamples(markerA, markerB, r, true, true), bPt]
   };
 }
 
@@ -217,23 +288,54 @@ function perpendicularCornerLoop(aPt: Point, markerA: Point, dirA: Point, bPt: P
       ' L ' + markerA.x + ' ' + markerA.y +
       ' A ' + PERPENDICULAR_LOOP_RADIUS + ' ' + PERPENDICULAR_LOOP_RADIUS + ' 0 0 ' + sweep + ' ' + markerB.x + ' ' + markerB.y +
       ' L ' + bPt.x + ' ' + bPt.y,
-    mid: { x: (markerA.x + markerB.x) / 2, y: (markerA.y + markerB.y) / 2 }
+    mid: { x: (markerA.x + markerB.x) / 2, y: (markerA.y + markerB.y) / 2 },
+    samples: [aPt, markerA, ...arcSamples(markerA, markerB, PERPENDICULAR_LOOP_RADIUS, false, sweep === 1), bPt]
   };
 }
 
-function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide) {
+// Opposite edges of the SAME entity (both ends dragged to, say, left and
+// right): a plain bezier between them runs straight through the middle of
+// the box - and no amount of control-arm stretching gets it out, since the
+// two arms point away from each other horizontally. Routed explicitly
+// around the box instead: over the top for horizontal edge pairs, around
+// the left for vertical ones.
+const SELF_DETOUR_CLEARANCE = 50;
+function oppositeSideSelfLoop(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, box: Box) {
+  const markerA = markerAnchor(aPt, aSide);
+  const markerB = markerAnchor(bPt, bSide);
+  const horizontal = aSide === 'left' || aSide === 'right';
+  const c1 = horizontal
+    ? { x: markerA.x, y: box.y - SELF_DETOUR_CLEARANCE }
+    : { x: box.x - SELF_DETOUR_CLEARANCE, y: markerA.y };
+  const c2 = horizontal
+    ? { x: markerB.x, y: box.y - SELF_DETOUR_CLEARANCE }
+    : { x: box.x - SELF_DETOUR_CLEARANCE, y: markerB.y };
+  return {
+    d: 'M ' + aPt.x + ' ' + aPt.y +
+      ' L ' + markerA.x + ' ' + markerA.y +
+      ' C ' + c1.x + ' ' + c1.y + ', ' + c2.x + ' ' + c2.y + ', ' + markerB.x + ' ' + markerB.y +
+      ' L ' + bPt.x + ' ' + bPt.y,
+    mid: bezierPointAt(markerA, c1, c2, markerB, 0.5),
+    samples: [aPt, markerA, ...cubicSamples(markerA, c1, c2, markerB), bPt]
+  };
+}
+
+function selfLoopPath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, box?: Box) {
   const markerA = markerAnchor(aPt, aSide);
   const markerB = markerAnchor(bPt, bSide);
   const dirA = sideDir(aSide), dirB = sideDir(bSide);
   if (aSide === bSide) return sameSideLoop(aPt, markerA, bPt, markerB, dirA);
   const isOpposite = dirA.x === -dirB.x && dirA.y === -dirB.y;
-  if (isOpposite) return bezierPath(aPt, aSide, bPt, bSide);
+  if (isOpposite) {
+    if (box) return oppositeSideSelfLoop(aPt, aSide, bPt, bSide, box);
+    return bezierPath(aPt, aSide, bPt, bSide);
+  }
   return perpendicularCornerLoop(aPt, markerA, dirA, bPt, markerB, dirB);
 }
 
-function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, isSelf: boolean) {
-  if (isSelf) return selfLoopPath(aPt, aSide, bPt, bSide);
-  return state.data.lineStyle === 'angular' ? angularPath(aPt, aSide, bPt, bSide) : bezierPath(aPt, aSide, bPt, bSide);
+function linePath(aPt: Point, aSide: AnchorSide, bPt: Point, bSide: AnchorSide, isSelf: boolean, avoid?: Box[]) {
+  if (isSelf) return selfLoopPath(aPt, aSide, bPt, bSide, avoid && avoid[0]);
+  return state.data.lineStyle === 'angular' ? angularPath(aPt, aSide, bPt, bSide) : bezierPath(aPt, aSide, bPt, bSide, avoid);
 }
 
 // Identifying relationship: the FK column also serves as (part of) the
@@ -336,32 +438,49 @@ function buildRelationNode(relation: Relation): SVGGElement {
   return g;
 }
 
+// Everything a relation node's DOM actually depends on. Rebuilding the
+// node's markers/label/line on every render is what made dragging a
+// heavily-connected entity lag - each mousemove re-created every
+// relation's marker elements and re-measured every label, even for
+// relations nowhere near the moved entity. With the signature check, a
+// render only touches the nodes whose geometry or styling actually changed.
+function relationNodeSignature(relation: Relation, pathD: string, isSelected: boolean, identifying: boolean): string {
+  return pathD + '|' + isSelected + '|' + identifying + '|' + displayRelationName(relation) + '|' +
+    sourceCardinalityOf(relation) + '|' + targetCardinalityOf(relation);
+}
+
 function updateRelationNode(node: SVGGElement, relation: Relation): void {
   const aBox = entityRenderer.getEntityBox(relation.sourceEntityId);
   const bBox = entityRenderer.getEntityBox(relation.targetEntityId);
-  if (!aBox || !bBox) { node.style.display = 'none'; return; }
+  if (!aBox || !bBox) { node.style.display = 'none'; delete node.dataset.sig; relationSamples.delete(relation.id); return; }
   node.style.display = '';
   // A composite (multi-column) FK still draws as a single line - anchored
   // on the first column pair's rows.
   const firstPair = relation.columnPairs[0];
-  if (!firstPair) { node.style.display = 'none'; return; }
+  if (!firstPair) { node.style.display = 'none'; delete node.dataset.sig; relationSamples.delete(relation.id); return; }
   const aRow = entityRenderer.getColumnRowCenter(relation.sourceEntityId, firstPair.sourceColumnId);
   const bRow = entityRenderer.getColumnRowCenter(relation.targetEntityId, firstPair.targetColumnId);
-  if (!aRow || !bRow) { node.style.display = 'none'; return; }
+  if (!aRow || !bRow) { node.style.display = 'none'; delete node.dataset.sig; relationSamples.delete(relation.id); return; }
 
   const isSelf = relation.sourceEntityId === relation.targetEntityId;
   const geom = computeEndpoints(aBox, aRow.y, bBox, bRow.y, isSelf, relation.sourceAnchor, relation.targetAnchor);
-  const path = linePath(geom.aPt, geom.aSide, geom.bPt, geom.bSide, isSelf);
+  const path = linePath(geom.aPt, geom.aSide, geom.bPt, geom.bSide, isSelf, isSelf ? [aBox] : [aBox, bBox]);
+  relationSamples.set(relation.id, path.samples);
 
   const selected = state.data.selected;
   const isSelected = !!(selected && selected.type === 'relation' && selected.id === relation.id);
+  const identifying = isIdentifying(relation);
+
+  const sig = relationNodeSignature(relation, path.d, isSelected, identifying);
+  if (node.dataset.sig === sig) return;
+  node.dataset.sig = sig;
 
   const line = node.querySelector('.relation-line') as SVGPathElement;
   line.setAttribute('d', path.d);
   line.setAttribute('fill', 'none');
   line.setAttribute('stroke', isSelected ? theme.colors.relationStrokeHover : theme.colors.relationStroke);
   line.setAttribute('stroke-width', isSelected ? '2.5' : '1.5');
-  if (isIdentifying(relation)) line.removeAttribute('stroke-dasharray');
+  if (identifying) line.removeAttribute('stroke-dasharray');
   else line.setAttribute('stroke-dasharray', '6,4');
 
   const hit = node.querySelector('.relation-hit') as SVGPathElement;
@@ -436,24 +555,16 @@ const nodeMap = new Map<string, SVGGElement>();
 // visible line rebuilt from that polyline; everything else keeps its
 // original smooth curve untouched.
 const HOP_RADIUS = 7;
-const CROSSING_SAMPLE_STEP = 6;
 
 function vSub(a: Point, b: Point): Point { return { x: a.x - b.x, y: a.y - b.y }; }
 function vAdd(a: Point, b: Point): Point { return { x: a.x + b.x, y: a.y + b.y }; }
 function vScale(a: Point, k: number): Point { return { x: a.x * k, y: a.y * k }; }
 function vNorm(a: Point): Point { const len = Math.hypot(a.x, a.y) || 1; return { x: a.x / len, y: a.y / len }; }
 
-function samplePath(pathEl: SVGPathElement): Point[] {
-  const total = pathEl.getTotalLength();
-  if (!total || !isFinite(total)) return [];
-  const steps = Math.max(2, Math.ceil(total / CROSSING_SAMPLE_STEP));
-  const pts: Point[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const p = pathEl.getPointAtLength((i / steps) * total);
-    pts.push({ x: p.x, y: p.y });
-  }
-  return pts;
-}
+// Analytic polyline of each relation's current path, stored by
+// updateRelationNode as a byproduct of building the path. This is the sole
+// geometry source for hop detection - never re-derived from the DOM.
+const relationSamples = new Map<string, Point[]>();
 
 function bboxOf(points: Point[]): Box {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -484,9 +595,9 @@ function segIntersection(p1: Point, p2: Point, p3: Point, p4: Point): { t: numbe
   return { t, point: { x: p1.x + t * d1x, y: p1.y + t * d1y } };
 }
 
-interface Crossing { segIndex: number; t: number; point: Point }
+interface Crossing { segIndex: number; t: number; point: Point; otherId: string }
 
-interface CrossingEntry { id: string; points: Point[] }
+interface CrossingEntry { id: string; points: Point[]; identifying: boolean }
 
 // A crossing this close to either line's own entity edge falls inside (or
 // right next to) that edge's cardinality marker artwork - hopping there
@@ -503,23 +614,44 @@ function distanceToNearestEndpoint(pt: Point, points: Point[]): number {
 // Two curves that run close and nearly parallel for a stretch (rather than
 // crossing cleanly once) get flagged on several adjacent sample segments in
 // a row instead of one - collapsing anything within this distance of the
-// previously accepted crossing turns that cluster back into a single hop.
+// previously accepted crossing (against that SAME other relation) turns
+// that cluster back into a single hop. Grouped by otherId first so this
+// never merges two genuinely different crossings (e.g. against two
+// different relations meeting near the same spot, as in a hub layout) into
+// one, which would silently drop a real crossing's hop.
 const MIN_CROSSING_GAP = HOP_RADIUS * 3;
 
 function dedupeCrossings(crossings: Crossing[]): Crossing[] {
-  const sorted = crossings.slice().sort((a, b) => (a.segIndex + a.t) - (b.segIndex + b.t));
+  const byOther = new Map<string, Crossing[]>();
+  crossings.forEach((c) => {
+    const list = byOther.get(c.otherId) || [];
+    list.push(c);
+    byOther.set(c.otherId, list);
+  });
   const out: Crossing[] = [];
-  sorted.forEach((c) => {
-    const prev = out[out.length - 1];
-    if (prev && Math.hypot(c.point.x - prev.point.x, c.point.y - prev.point.y) < MIN_CROSSING_GAP) return;
-    out.push(c);
+  byOther.forEach((list) => {
+    const sorted = list.slice().sort((a, b) => (a.segIndex + a.t) - (b.segIndex + b.t));
+    let prev: Crossing | undefined;
+    sorted.forEach((c) => {
+      if (prev && Math.hypot(c.point.x - prev.point.x, c.point.y - prev.point.y) < MIN_CROSSING_GAP) return;
+      out.push(c);
+      prev = c;
+    });
   });
   return out;
 }
 
-// Deterministic per crossing pair: the lexicographically smaller relation id
-// always yields (gets the hop), so the choice is stable across re-renders
-// regardless of draw order.
+// Which of a crossing pair gets the hop: non-identifying (dashed)
+// relations yield before identifying (solid) ones - solid lines are meant
+// to read as the more "structural" connection and stay straight wherever
+// possible - and within the same identifying-ness, the lexicographically
+// smaller id yields, so the choice is stable across re-renders regardless
+// of draw order.
+function isPreferredYielder(a: CrossingEntry, b: CrossingEntry): boolean {
+  if (a.identifying !== b.identifying) return !a.identifying;
+  return a.id < b.id;
+}
+
 function computeLineCrossingHops(entries: CrossingEntry[]): Map<string, Crossing[]> {
   const hopsByRelation = new Map<string, Crossing[]>();
   const boxes = entries.map((e) => bboxOf(e.points));
@@ -527,7 +659,7 @@ function computeLineCrossingHops(entries: CrossingEntry[]): Map<string, Crossing
     for (let j = i + 1; j < entries.length; j++) {
       if (entries[i].id === entries[j].id) continue;
       if (!bboxesOverlap(boxes[i], boxes[j], HOP_RADIUS)) continue;
-      const yielderIdx = entries[i].id < entries[j].id ? i : j;
+      const yielderIdx = isPreferredYielder(entries[i], entries[j]) ? i : j;
       const otherIdx = yielderIdx === i ? j : i;
       const yielder = entries[yielderIdx], other = entries[otherIdx];
       for (let si = 0; si < yielder.points.length - 1; si++) {
@@ -537,7 +669,7 @@ function computeLineCrossingHops(entries: CrossingEntry[]): Map<string, Crossing
           if (distanceToNearestEndpoint(hit.point, yielder.points) < MIN_EDGE_DISTANCE) continue;
           if (distanceToNearestEndpoint(hit.point, other.points) < MIN_EDGE_DISTANCE) continue;
           const list = hopsByRelation.get(yielder.id) || [];
-          list.push({ segIndex: si, t: hit.t, point: hit.point });
+          list.push({ segIndex: si, t: hit.t, point: hit.point, otherId: other.id });
           hopsByRelation.set(yielder.id, list);
         }
       }
@@ -547,60 +679,115 @@ function computeLineCrossingHops(entries: CrossingEntry[]): Map<string, Crossing
   return hopsByRelation;
 }
 
-// Rebuilds the polyline as straight segments, replacing a small window
-// around each crossing with a quadratic-bezier bump. Unlike an earlier
-// version of this, "before"/"after" are real sampled points already on the
-// curve (not linearly extrapolated from the crossing point along the local
-// tangent) - extrapolating drifts away from the actual curve whenever it's
-// bending sharply right at the crossing (e.g. near an entity edge, where
-// the bezier control points curl tightly), producing a visibly kinked bump.
-// Anchoring to real points guarantees the bump always meets the rest of the
-// line cleanly regardless of local curvature. The bump's control point is
-// placed so the curve's midpoint sits out from the chord on whichever
-// perpendicular points further up-screen - always bulges "up" rather than
-// alternating with travel direction.
+// Cumulative arc length at each sample point, so a crossing's exact
+// position (segIndex + t, i.e. a fraction of the way through one ~6px
+// sample segment) can be converted to a precise distance-along-the-curve
+// figure instead of only ever landing on a sample point.
+function cumulativeLengths(points: Point[]): number[] {
+  const cum = [0];
+  for (let k = 1; k < points.length; k++) cum.push(cum[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y));
+  return cum;
+}
+
+// The point at a given arc length along the polyline, interpolated between
+// whichever two sample points straddle it - this is what makes the hop's
+// before/after anchors land exactly HOP_RADIUS from the true crossing point
+// rather than snapping to the nearest ~6px sample, which is what made hops
+// visibly off-center whenever the crossing fell close to one end of its
+// sample segment instead of the middle.
+function pointAtArcLength(points: Point[], cum: number[], targetLen: number): Point {
+  const clamped = Math.max(0, Math.min(cum[cum.length - 1], targetLen));
+  for (let k = 0; k < points.length - 1; k++) {
+    if (cum[k + 1] >= clamped) {
+      const segLen = cum[k + 1] - cum[k];
+      const frac = segLen === 0 ? 0 : (clamped - cum[k]) / segLen;
+      return vAdd(points[k], vScale(vSub(points[k + 1], points[k]), frac));
+    }
+  }
+  return points[points.length - 1];
+}
+
+// Rebuilds the polyline as straight segments, replacing a HOP_RADIUS-wide
+// window around each crossing's exact arc-length position with a
+// quadratic-bezier bump - walked in arc-length order (not by sample index)
+// so overlapping/adjacent crossing windows chain together cleanly instead
+// of one silently overwriting or skipping past another. The bump's control
+// point is placed so the curve's midpoint sits out from the chord on
+// whichever perpendicular points further up-screen - always bulges "up"
+// rather than alternating with travel direction.
 function buildHopPath(points: Point[], crossings: Crossing[]): string {
   if (!points.length) return '';
   if (!crossings.length) return 'M ' + points.map((p) => p.x + ' ' + p.y).join(' L ');
 
-  const bySegIndex = new Map(crossings.map((c) => [c.segIndex, c]));
+  const cum = cumulativeLengths(points);
+  const sorted = crossings
+    .map((c) => ({ c, arc: cum[c.segIndex] + c.t * (cum[c.segIndex + 1] - cum[c.segIndex]) }))
+    .sort((a, b) => a.arc - b.arc);
+
   let d = 'M ' + points[0].x + ' ' + points[0].y;
-  let i = 0;
-  while (i < points.length - 1) {
-    if (bySegIndex.has(i)) {
-      const before = points[i];
-      const afterIdx = Math.min(points.length - 1, i + 2);
-      const after = points[afterIdx];
-      const dir = vNorm(vSub(after, before));
-      const mid = { x: (before.x + after.x) / 2, y: (before.y + after.y) / 2 };
-      const perpA: Point = { x: -dir.y, y: dir.x };
-      const perpB: Point = { x: dir.y, y: -dir.x };
-      const perp = perpA.y <= perpB.y ? perpA : perpB;
-      const bumpHeight = Math.max(HOP_RADIUS, Math.hypot(after.x - before.x, after.y - before.y) / 2);
-      const control = vAdd(mid, vScale(perp, bumpHeight * 2));
-      d += ' Q ' + control.x + ' ' + control.y + ', ' + after.x + ' ' + after.y;
-      i = afterIdx;
-      continue;
+  let k = 1; // next raw sample point not yet emitted
+  let emittedArc = 0;
+
+  sorted.forEach(({ arc }) => {
+    const beforeArc = Math.max(emittedArc, arc - HOP_RADIUS);
+    const afterArc = arc + HOP_RADIUS;
+    while (k < points.length && cum[k] < beforeArc) {
+      d += ' L ' + points[k].x + ' ' + points[k].y;
+      k++;
     }
-    i++;
-    d += ' L ' + points[i].x + ' ' + points[i].y;
-  }
+    const before = pointAtArcLength(points, cum, beforeArc);
+    const after = pointAtArcLength(points, cum, afterArc);
+    d += ' L ' + before.x + ' ' + before.y;
+
+    const dir = vNorm(vSub(after, before));
+    const mid = { x: (before.x + after.x) / 2, y: (before.y + after.y) / 2 };
+    const perpA: Point = { x: -dir.y, y: dir.x };
+    const perpB: Point = { x: dir.y, y: -dir.x };
+    const perp = perpA.y <= perpB.y ? perpA : perpB;
+    const bumpHeight = Math.max(HOP_RADIUS, Math.hypot(after.x - before.x, after.y - before.y) / 2);
+    const control = vAdd(mid, vScale(perp, bumpHeight * 2));
+    d += ' Q ' + control.x + ' ' + control.y + ', ' + after.x + ' ' + after.y;
+
+    emittedArc = afterArc;
+    while (k < points.length && cum[k] <= afterArc) k++;
+  });
+
+  while (k < points.length) { d += ' L ' + points[k].x + ' ' + points[k].y; k++; }
+
   return d;
 }
 
+// Relations whose visible line currently carries hop bumps - needed so a
+// hop can be REMOVED again: with the signature check, updateRelationNode
+// skips a relation whose own geometry didn't change, so when the line it
+// used to cross moves away, restoring the base (hop-free) path is this
+// function's job, not updateRelationNode's. The hit path always holds the
+// base d.
+const hoppedIds = new Set<string>();
+
 function applyLineCrossingHops(): void {
-  const entries: (CrossingEntry & { line: SVGPathElement })[] = [];
+  const entries: (CrossingEntry & { line: SVGPathElement; baseD: string })[] = [];
   nodeMap.forEach((node, id) => {
     if (node.style.display === 'none') return;
+    const relation = state.getRelation(id);
+    if (!relation) return;
+    const points = relationSamples.get(id);
+    if (!points || points.length < 2) return;
     const hit = node.querySelector('.relation-hit') as SVGPathElement;
     const line = node.querySelector('.relation-line') as SVGPathElement;
-    const points = samplePath(hit);
-    if (points.length >= 2) entries.push({ id, points, line });
+    entries.push({ id, points, line, baseD: hit.getAttribute('d') || '', identifying: isIdentifying(relation) });
   });
+
   const hopsByRelation = computeLineCrossingHops(entries);
   entries.forEach((entry) => {
     const crossings = hopsByRelation.get(entry.id);
-    if (crossings && crossings.length) entry.line.setAttribute('d', buildHopPath(entry.points, crossings));
+    if (crossings && crossings.length) {
+      entry.line.setAttribute('d', buildHopPath(entry.points, crossings));
+      hoppedIds.add(entry.id);
+    } else if (hoppedIds.has(entry.id)) {
+      entry.line.setAttribute('d', entry.baseD);
+      hoppedIds.delete(entry.id);
+    }
   });
 }
 
@@ -618,7 +805,7 @@ function render(): void {
     updateRelationNode(node, relation);
   });
   nodeMap.forEach((node, id) => {
-    if (!seen.has(id)) { node.remove(); nodeMap.delete(id); }
+    if (!seen.has(id)) { node.remove(); nodeMap.delete(id); relationSamples.delete(id); hoppedIds.delete(id); }
   });
   applyLineCrossingHops();
 }
