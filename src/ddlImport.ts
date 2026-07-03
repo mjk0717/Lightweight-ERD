@@ -137,11 +137,11 @@ function open(): void {
       '<div class="wizard-plan-choices">' +
         '<button type="button" class="wizard-plan-card" data-mode="sql">' +
           '<div><strong>DDL SQL Import</strong><p class="hint">Generate a catalog-extraction SQL script for your DB vendor, run it there, then paste the resulting DDL text.</p></div>' +
-          '<span class="wizard-plan-arrow">&rarr;</span>' +
+          '<span class="wizard-plan-arrow">&rsaquo;</span>' +
         '</button>' +
         '<button type="button" class="wizard-plan-card" data-mode="file">' +
           '<div><strong>File Import</strong><p class="hint">Choose or drag &amp; drop a .sql/.txt file that already contains DDL statements.</p></div>' +
-          '<span class="wizard-plan-arrow">&rarr;</span>' +
+          '<span class="wizard-plan-arrow">&rsaquo;</span>' +
         '</button>' +
       '</div>';
 

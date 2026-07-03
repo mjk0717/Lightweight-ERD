@@ -333,21 +333,27 @@ body { display: flex; flex-direction: column; }
 .wizard-step.done:hover { background: #bfdbfe; }
 .wizard-step-sep { color: #cbd5e1; font-size: 12px; }
 
-/* Plan step - each choice is a full-width button that advances on click */
-.wizard-plan-choices { display: flex; flex-direction: column; gap: 10px; }
+/* Plan step - choices are full-width list rows separated by divider lines,
+   each with a chevron on the right; clicking a row advances. The container
+   bleeds out over the modal body padding so the divider lines run edge to
+   edge. */
+.wizard-plan-choices {
+  display: flex; flex-direction: column;
+  margin: 0 -16px; border-top: 1px solid #e2e8f0;
+}
 .wizard-plan-card {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  width: 100%; padding: 14px 16px; text-align: left;
-  border: 1px solid #e2e8f0; border-radius: 6px; background: #fff;
+  width: 100%; padding: 16px; text-align: left;
+  border: none; border-bottom: 1px solid #e2e8f0; background: transparent;
   color: #1e293b; cursor: pointer; font: inherit;
-  transition: border-color 0.12s, background 0.12s;
+  transition: background 0.12s;
 }
-.wizard-plan-card:hover { border-color: #2563eb; background: #eff6ff; }
-.wizard-plan-card:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.wizard-plan-card:hover { background: #eff6ff; }
+.wizard-plan-card:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
 .wizard-plan-card > div { flex: 1 1 auto; min-width: 0; }
 .wizard-plan-card strong { display: block; margin-bottom: 2px; font-size: 13px; }
 .wizard-plan-card .hint { margin: 0; }
-.wizard-plan-arrow { flex: 0 0 auto; color: #94a3b8; font-size: 18px; }
+.wizard-plan-arrow { flex: 0 0 auto; color: #94a3b8; font-size: 20px; line-height: 1; }
 .wizard-plan-card:hover .wizard-plan-arrow { color: #2563eb; }
 
 /* Execute step - SQL Import */

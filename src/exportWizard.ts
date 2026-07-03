@@ -77,11 +77,11 @@ function open(): void {
       '<div class="wizard-plan-choices">' +
         '<button type="button" class="wizard-plan-card" data-format="sql">' +
           '<div><strong>SQL (DDL) export</strong><p class="hint">Generate CREATE TABLE / constraint / comment statements for a chosen DB vendor.</p></div>' +
-          '<span class="wizard-plan-arrow">&rarr;</span>' +
+          '<span class="wizard-plan-arrow">&rsaquo;</span>' +
         '</button>' +
         '<button type="button" class="wizard-plan-card" data-format="png">' +
           '<div><strong>PNG image</strong><p class="hint">Render the current diagram to a downloadable PNG snapshot.</p></div>' +
-          '<span class="wizard-plan-arrow">&rarr;</span>' +
+          '<span class="wizard-plan-arrow">&rsaquo;</span>' +
         '</button>' +
       '</div>';
 
