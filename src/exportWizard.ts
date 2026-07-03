@@ -70,29 +70,27 @@ function open(): void {
 
   function renderPlan(direction: Direction = 'left'): void {
     const body = document.createElement('div');
+    // Each choice card is itself the button - clicking picks the format and
+    // advances to Execute, so the Plan step carries no Next button.
     body.innerHTML =
       stepsHtml('plan') +
       '<div class="wizard-plan-choices">' +
-        '<label class="wizard-plan-card">' +
-          '<input type="radio" name="f-export-format" value="sql"' + (format === 'sql' ? ' checked' : '') + '>' +
+        '<button type="button" class="wizard-plan-card" data-format="sql">' +
           '<div><strong>SQL (DDL) export</strong><p class="hint">Generate CREATE TABLE / constraint / comment statements for a chosen DB vendor.</p></div>' +
-        '</label>' +
-        '<label class="wizard-plan-card">' +
-          '<input type="radio" name="f-export-format" value="png"' + (format === 'png' ? ' checked' : '') + '>' +
+          '<span class="wizard-plan-arrow">&rarr;</span>' +
+        '</button>' +
+        '<button type="button" class="wizard-plan-card" data-format="png">' +
           '<div><strong>PNG image</strong><p class="hint">Render the current diagram to a downloadable PNG snapshot.</p></div>' +
-        '</label>' +
+          '<span class="wizard-plan-arrow">&rarr;</span>' +
+        '</button>' +
       '</div>';
 
-    (Array.from(body.querySelectorAll('input[name="f-export-format"]')) as HTMLInputElement[])
-      .forEach((r) => r.addEventListener('change', () => { if (r.checked) format = r.value as Format; }));
+    (Array.from(body.querySelectorAll('.wizard-plan-card')) as HTMLElement[]).forEach((card) => {
+      card.addEventListener('click', () => { format = card.dataset.format as Format; renderExecute('left'); });
+    });
     wireStepNav(body);
 
-    modal.transition({
-      title: 'Export',
-      width: '640px',
-      body,
-      actions: [{ label: 'Next', variant: 'primary', onClick: () => renderExecute('left') }]
-    }, direction);
+    modal.transition({ title: 'Export', width: '640px', body, actions: [] }, direction);
   }
 
   function renderExecute(direction: Direction = 'left'): void {

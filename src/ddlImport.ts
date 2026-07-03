@@ -130,31 +130,27 @@ function open(): void {
 
   function renderPlan(direction: Direction = 'left'): void {
     const body = document.createElement('div');
+    // The choices are the action: each card is a button that both picks the
+    // mode and advances to Execute, so the Plan step needs no Next button.
     body.innerHTML =
       stepsHtml('plan') +
       '<div class="wizard-plan-choices">' +
-        '<label class="wizard-plan-card">' +
-          '<input type="radio" name="f-import-mode" value="sql"' + (mode === 'sql' ? ' checked' : '') + '>' +
+        '<button type="button" class="wizard-plan-card" data-mode="sql">' +
           '<div><strong>DDL SQL Import</strong><p class="hint">Generate a catalog-extraction SQL script for your DB vendor, run it there, then paste the resulting DDL text.</p></div>' +
-        '</label>' +
-        '<label class="wizard-plan-card">' +
-          '<input type="radio" name="f-import-mode" value="file"' + (mode === 'file' ? ' checked' : '') + '>' +
+          '<span class="wizard-plan-arrow">&rarr;</span>' +
+        '</button>' +
+        '<button type="button" class="wizard-plan-card" data-mode="file">' +
           '<div><strong>File Import</strong><p class="hint">Choose or drag &amp; drop a .sql/.txt file that already contains DDL statements.</p></div>' +
-        '</label>' +
+          '<span class="wizard-plan-arrow">&rarr;</span>' +
+        '</button>' +
       '</div>';
 
-    const modeInputs = Array.from(body.querySelectorAll('input[name="f-import-mode"]')) as HTMLInputElement[];
-    modeInputs.forEach((r) => r.addEventListener('change', () => { if (r.checked) mode = r.value as 'sql' | 'file'; }));
+    (Array.from(body.querySelectorAll('.wizard-plan-card')) as HTMLElement[]).forEach((card) => {
+      card.addEventListener('click', () => { mode = card.dataset.mode as 'sql' | 'file'; renderExecute('left'); });
+    });
     wireStepNav(body);
 
-    modal.transition({
-      title: 'Import DDL',
-      width: '640px',
-      body,
-      actions: [
-        { label: 'Next', variant: 'primary', onClick: () => renderExecute('left') }
-      ]
-    }, direction);
+    modal.transition({ title: 'Import DDL', width: '640px', body, actions: [] }, direction);
   }
 
   function renderExecuteSql(direction: Direction = 'left'): void {

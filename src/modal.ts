@@ -100,6 +100,21 @@ function buildFooterButtons(footer: HTMLElement, actions: ModalAction[]): void {
   });
 }
 
+// Ensures the box's footer matches the given actions: creates the footer bar
+// when a step first needs buttons, removes it entirely when a step has none
+// (so a footerless step - e.g. the wizard Plan, whose choices are the
+// buttons - shows no empty bar), otherwise just rebuilds the buttons.
+function syncFooter(box: HTMLElement, actions: ModalAction[]): void {
+  let footer = box.querySelector('.modal-footer') as HTMLElement | null;
+  if (!actions.length) { if (footer) footer.remove(); return; }
+  if (!footer) {
+    footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    box.appendChild(footer);
+  }
+  buildFooterButtons(footer, actions);
+}
+
 // Swaps the current modal's body/footer/title for a wizard-style step change,
 // sliding the old content out and the new content in (left = advancing,
 // right = going back) instead of the instant rebuild open() does. Falls back
@@ -112,7 +127,6 @@ function transition(opts: ModalOptions, direction: 'left' | 'right'): ModalHandl
 
   const box = current.box;
   const bodyEl = current.body;
-  const footer = box.querySelector('.modal-footer') as HTMLElement | null;
   const titleEl = box.querySelector('.modal-title') as HTMLElement | null;
 
   const oldHeight = bodyEl.getBoundingClientRect().height;
@@ -173,7 +187,7 @@ function transition(opts: ModalOptions, direction: 'left' | 'right'): ModalHandl
   newPane.addEventListener('transitionend', (e) => { if (e.propertyName === 'transform') finish(); });
   setTimeout(finish, 260);
 
-  if (footer) buildFooterButtons(footer, opts.actions || []);
+  syncFooter(box, opts.actions || []);
   current.onClose = opts.onClose;
   return { close, root: current.overlay, body: bodyEl };
 }
