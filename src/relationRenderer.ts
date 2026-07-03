@@ -582,8 +582,16 @@ function bboxesOverlap(a: Box, b: Box, pad: number): boolean {
     a.y - pad <= b.y + b.h + pad && b.y - pad <= a.y + a.h + pad;
 }
 
-// Proper interior crossing only (both t and u strictly inside (0,1), with a
-// small margin) - excludes lines merely touching near their shared endpoints.
+// Interior crossing of two segments. The bounds are strict [0,1] with only a
+// hair of epsilon slack - NOT a wide per-segment margin: a wide margin
+// (e.g. rejecting the outer 3% of every segment) punches a blind spot at
+// each shared polyline vertex, since a crossing landing on a vertex reads as
+// t~=0.98 on one segment and t~=0.02 on the next, so BOTH adjacent segments
+// reject it and the crossing gets no hop. Endpoint-touch exclusion (lines
+// merely meeting at a shared entity edge) is handled separately and more
+// precisely by the MIN_EDGE_DISTANCE filter in computeLineCrossingHops; a
+// crossing exactly on a vertex may match both adjacent segments here, but
+// dedupeCrossings collapses that duplicate.
 function segIntersection(p1: Point, p2: Point, p3: Point, p4: Point): { t: number; point: Point } | null {
   const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
   const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
@@ -591,7 +599,8 @@ function segIntersection(p1: Point, p2: Point, p3: Point, p4: Point): { t: numbe
   if (Math.abs(denom) < 1e-9) return null;
   const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
   const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
-  if (t <= 0.03 || t >= 0.97 || u <= 0.03 || u >= 0.97) return null;
+  const EPS = 1e-6;
+  if (t < -EPS || t > 1 + EPS || u < -EPS || u > 1 + EPS) return null;
   return { t, point: { x: p1.x + t * d1x, y: p1.y + t * d1y } };
 }
 
