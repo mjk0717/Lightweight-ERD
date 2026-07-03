@@ -290,6 +290,13 @@ function isEntitySelected(id: string): boolean {
   return data.selectedEntityIds.indexOf(id) !== -1;
 }
 
+// Selects exactly the given entities (used after paste to select the copies).
+function selectEntities(ids: string[]): void {
+  data.selectedEntityIds = ids.slice();
+  data.selected = ids.length ? { type: 'entity', id: ids[ids.length - 1] } : null;
+  emit('select');
+}
+
 // Batch header-color change - used when a color is picked while several
 // entities are multi-selected, so one click recolors them all.
 function setHeaderColorForEntities(ids: string[], color: string): void {
@@ -306,7 +313,7 @@ function clearSelection(): void {
 export const state = {
   data,
   on, off, emit: notify, load, persist, replaceAll,
-  select, clearSelection, toggleEntitySelection, isEntitySelected, setHeaderColorForEntities, setDesignMode, setLineStyle, toggleMinimap,
+  select, clearSelection, toggleEntitySelection, isEntitySelected, selectEntities, setHeaderColorForEntities, setDesignMode, setLineStyle, toggleMinimap,
   nextEntityPosition,
   addEntity, getEntity, updateEntity, removeEntity, moveEntity,
   getColumn, addColumn, updateColumn, removeColumn, reorderColumns,

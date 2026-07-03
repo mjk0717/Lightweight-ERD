@@ -9,7 +9,53 @@ import { menuBar } from './menuBar';
 import { minimap } from './minimap';
 import { contextMenu } from './contextMenu';
 import { history } from './history';
-import { closest } from './util';
+import { closest, nextId } from './util';
+import { Entity } from './types';
+
+// In-memory clipboard for copying/duplicating tables within the diagram.
+// Holds deep clones of the copied entities only - relations are never copied,
+// so pasted tables come in unconnected.
+let clipboard: Entity[] = [];
+let pasteCount = 0;
+
+function copySelected(): void {
+  const ids = state.data.selectedEntityIds;
+  if (!ids.length) return;
+  clipboard = ids
+    .map((id) => state.getEntity(id))
+    .filter((e): e is Entity => !!e)
+    .map((e) => JSON.parse(JSON.stringify(e)) as Entity);
+  pasteCount = 0;
+}
+
+// A name not already taken - "FOO" -> "FOO_COPY", then "FOO_COPY2", etc. -
+// so duplicated tables never collide (which would confuse name-based DDL
+// export and relation matching).
+function uniqueEntityName(base: string): string {
+  const names = new Set(state.data.entities.map((e) => e.name.toUpperCase()));
+  let candidate = base + '_COPY';
+  let n = 2;
+  while (names.has(candidate.toUpperCase())) { candidate = base + '_COPY' + n; n++; }
+  return candidate;
+}
+
+function pasteClipboard(): void {
+  if (!clipboard.length) return;
+  // Cascade repeated pastes so copies don't stack exactly on each other.
+  pasteCount++;
+  const off = 24 * pasteCount;
+  const newIds: string[] = [];
+  clipboard.forEach((src) => {
+    const columns = src.columns.map((c) => Object.assign({}, c, { id: nextId('col') }));
+    const entity: Entity = {
+      id: nextId('ent'), name: uniqueEntityName(src.name), comment: src.comment,
+      x: src.x + off, y: src.y + off, headerColor: src.headerColor, columns
+    };
+    state.addEntity(entity);
+    newIds.push(entity.id);
+  });
+  state.selectEntities(newIds);
+}
 
 function deleteSelected(): void {
   // Multi-selected entities delete together; otherwise fall back to the
@@ -32,9 +78,17 @@ function deleteSelected(): void {
 function onKeydown(e: KeyboardEvent): void {
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  // A modal (table editor, wizards...) handles its own copy/paste/delete.
+  if (document.querySelector('.modal-overlay')) return;
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     deleteSelected();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'c' && state.data.selectedEntityIds.length) { e.preventDefault(); copySelected(); }
+    else if (k === 'v' && clipboard.length) { e.preventDefault(); pasteClipboard(); }
   }
 }
 
