@@ -118,75 +118,24 @@ function syncFooter(box: HTMLElement, actions: ModalAction[]): void {
   buildFooterButtons(footer, actions);
 }
 
-// Swaps the current modal's body/footer/title for a wizard-style step change,
-// sliding the old content out and the new content in (left = advancing,
-// right = going back) instead of the instant rebuild open() does. Falls back
-// to a plain open() when there's no modal to transition from (the wizard's
-// first step). The body's height is explicitly animated between the two
-// steps' natural heights since absolutely-positioned sliding panes can't
-// otherwise contribute to it.
-function transition(opts: ModalOptions, direction: 'left' | 'right'): ModalHandle {
+// Swaps the current modal's title/body/footer in place for a wizard step
+// change - a plain instant replacement (no slide animation). Falls back to a
+// full open() when there's no modal to transition from (the wizard's first
+// step). The `_direction` argument is unused now that there's no animation;
+// it's kept so the wizard call sites don't all need touching.
+function transition(opts: ModalOptions, _direction: 'left' | 'right'): ModalHandle {
   if (!current) return open(opts);
 
   const box = current.box;
   const bodyEl = current.body;
   const titleEl = box.querySelector('.modal-title') as HTMLElement | null;
 
-  const oldHeight = bodyEl.getBoundingClientRect().height;
   if (opts.width) box.style.width = opts.width;
   if (titleEl) titleEl.textContent = opts.title || '';
   if (opts.body.querySelector('.wizard-steps')) box.classList.add('modal-wizard');
 
-  const oldPane = document.createElement('div');
-  oldPane.className = 'modal-slide-pane';
-  while (bodyEl.firstChild) oldPane.appendChild(bodyEl.firstChild);
-
-  // Enter slide mode FIRST, before measuring: while sliding, bodyEl's own
-  // padding is dropped and the panes carry it instead (see the CSS). That
-  // makes the animated/final states identical - the padding-inset content
-  // position and the height both match once finish() unwraps the pane - so
-  // nothing shifts or resizes when the animation ends. The new pane is
-  // measured in-flow (position:static) so its height already includes that
-  // padding and equals the height bodyEl settles at.
-  bodyEl.classList.add('modal-body-sliding');
-  bodyEl.style.height = oldHeight + 'px';
-
-  const newPane = document.createElement('div');
-  newPane.className = 'modal-slide-pane';
-  newPane.appendChild(opts.body);
-  newPane.style.position = 'static';
-  bodyEl.appendChild(newPane);
-  const newHeight = newPane.getBoundingClientRect().height;
-  newPane.style.position = '';
-  bodyEl.appendChild(oldPane);
-
-  const outSign = direction === 'left' ? -1 : 1;
-  newPane.style.transform = 'translateX(' + (-outSign * 100) + '%)';
-  oldPane.style.transform = 'translateX(0)';
-  void newPane.offsetWidth; // commit the starting transform before animating
-
-  requestAnimationFrame(() => {
-    bodyEl.style.height = newHeight + 'px';
-    oldPane.style.transform = 'translateX(' + (outSign * 100) + '%)';
-    newPane.style.transform = 'translateX(0)';
-  });
-
-  let finished = false;
-  function finish(): void {
-    if (finished) return;
-    finished = true;
-    oldPane.remove();
-    bodyEl.classList.remove('modal-body-sliding');
-    bodyEl.style.height = '';
-    while (newPane.firstChild) bodyEl.appendChild(newPane.firstChild);
-    newPane.remove();
-  }
-  // transitionend on a pane that's simultaneously being reparented/resized
-  // this way doesn't reliably fire across browsers, so a timer tied to the
-  // actual CSS duration (0.22s, plus a small margin) is the real completion
-  // signal - transitionend is kept only as a possible earlier trigger.
-  newPane.addEventListener('transitionend', (e) => { if (e.propertyName === 'transform') finish(); });
-  setTimeout(finish, 260);
+  bodyEl.innerHTML = '';
+  bodyEl.appendChild(opts.body);
 
   syncFooter(box, opts.actions || []);
   current.onClose = opts.onClose;
