@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-label="Lightweight-ERD - offline-first ERD editor in a single HTML file">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#334155" opacity="0.55"/>
+    </pattern>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <rect width="1200" height="300" fill="url(#dots)"/>
+
+  <!-- title block -->
+  <g font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif">
+    <rect x="80" y="70" width="6" height="60" rx="3" fill="url(#accent)"/>
+    <text x="106" y="116" font-size="54" font-weight="700" fill="#f8fafc" letter-spacing="-1">Lightweight<tspan fill="#60a5fa">-ERD</tspan></text>
+    <text x="108" y="156" font-size="19" fill="#94a3b8">Offline-first ERD editor — a single HTML file, no server, no accounts</text>
+
+    <!-- feature chips -->
+    <g font-size="13" fill="#93c5fd">
+      <rect x="108" y="184" width="150" height="30" rx="15" fill="#1d4ed8" opacity="0.16" stroke="#334155"/>
+      <text x="183" y="203" text-anchor="middle">DDL Import / Export</text>
+      <rect x="270" y="184" width="146" height="30" rx="15" fill="#1d4ed8" opacity="0.16" stroke="#334155"/>
+      <text x="343" y="203" text-anchor="middle">Logical / Physical</text>
+      <rect x="428" y="184" width="132" height="30" rx="15" fill="#1d4ed8" opacity="0.16" stroke="#334155"/>
+      <text x="494" y="203" text-anchor="middle">PNG / JSON Export</text>
+    </g>
+    <text x="108" y="246" font-size="13" font-family="Consolas, 'Courier New', monospace" fill="#64748b">file:///anywhere/index.html — TypeScript + esbuild, zero runtime dependencies</text>
+  </g>
+
+  <!-- mini diagram -->
+  <g font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif">
+    <!-- relation: angular elbow with crow's foot (many) at CHILD, double bar (one) at PARENT -->
+    <path d="M 875 118 L 900 118 L 900 196 L 928 196" fill="none" stroke="#94a3b8" stroke-width="2"/>
+    <!-- one marker (double bar) near PARENT -->
+    <path d="M 884 110 L 884 126 M 890 110 L 890 126" stroke="#94a3b8" stroke-width="2"/>
+    <!-- crow's foot at CHILD -->
+    <path d="M 940 196 L 928 188 M 940 196 L 928 204 M 940 196 L 928 196" stroke="#94a3b8" stroke-width="2" fill="none"/>
+
+    <!-- PARENT card -->
+    <g filter="url(#cardShadow)">
+      <rect x="695" y="52" width="180" height="112" rx="8" fill="#f8fafc"/>
+      <path d="M 695 60 a 8 8 0 0 1 8 -8 h 164 a 8 8 0 0 1 8 8 v 26 h -180 z" fill="url(#hdr)"/>
+      <text x="709" y="71" font-size="13" font-weight="700" fill="#ffffff">CUSTOMER</text>
+      <rect x="695" y="86" width="180" height="26" fill="#dbeafe"/>
+      <text x="709" y="103" font-size="12" fill="#1e3a8a" font-weight="600">PK  CUSTOMER_ID</text>
+      <text x="709" y="130" font-size="12" fill="#334155">NAME</text>
+      <text x="709" y="155" font-size="12" fill="#334155">EMAIL</text>
+    </g>
+
+    <!-- CHILD card -->
+    <g filter="url(#cardShadow)">
+      <rect x="940" y="140" width="180" height="112" rx="8" fill="#f8fafc"/>
+      <path d="M 940 148 a 8 8 0 0 1 8 -8 h 164 a 8 8 0 0 1 8 8 v 26 h -180 z" fill="url(#hdr)"/>
+      <text x="954" y="159" font-size="13" font-weight="700" fill="#ffffff">ORDERS</text>
+      <rect x="940" y="174" width="180" height="26" fill="#dbeafe"/>
+      <text x="954" y="191" font-size="12" fill="#1e3a8a" font-weight="600">PK  ORDER_ID</text>
+      <text x="954" y="218" font-size="12" fill="#334155">FK  CUSTOMER_ID</text>
+      <text x="954" y="243" font-size="12" fill="#334155">ORDERED_AT</text>
+    </g>
+  </g>
+</svg>
