@@ -73,9 +73,9 @@ function onModalKeydown(e: KeyboardEvent): void {
 // Excel-like range selection/copy-paste over the grid's text columns (row
 // reordering has its own drag handle, so this only spans Name/Comment/Data
 // type - the columns that are genuinely free-text).
-type CellField = 'name' | 'comment' | 'dataType';
-const CELL_FIELDS: CellField[] = ['name', 'comment', 'dataType'];
-const CELL_CLASSES = ['f-name', 'f-comment', 'f-type'];
+type CellField = 'name' | 'comment' | 'dataType' | 'defaultValue';
+const CELL_FIELDS: CellField[] = ['name', 'comment', 'dataType', 'defaultValue'];
+const CELL_CLASSES = ['f-name', 'f-comment', 'f-type', 'f-default'];
 interface CellIdx { row: number; col: number; }
 let selAnchor: CellIdx | null = null;
 let selFocus: CellIdx | null = null;
@@ -96,6 +96,7 @@ function renderRow(col: Column, idx: number): HTMLTableRowElement {
     '<td><input type="text" class="f-name" value="' + escapeHtml(col.name) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td><input type="text" class="f-comment" value="' + escapeHtml(col.comment || '') + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td><input type="text" class="f-type" list="oracle-types-datalist" value="' + escapeHtml(col.dataType) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
+    '<td><input type="text" class="f-default" value="' + escapeHtml(col.defaultValue || '') + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-pk" ' + (col.pk ? 'checked' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-null" ' + (col.nullable ? 'checked' : '') + '></td>' +
     '<td class="col-check">' + (col.fk ? '<span class="badge-fk">FK</span>' : '') + '</td>' +
@@ -115,6 +116,11 @@ function renderRow(col: Column, idx: number): HTMLTableRowElement {
   if (typeInput) {
     typeInput.addEventListener('input', (e) => { col.dataType = (e.target as HTMLInputElement).value; });
     typeInput.addEventListener('change', pushHistory);
+  }
+  const defaultInput = tr.querySelector('.f-default') as HTMLInputElement | null;
+  if (defaultInput) {
+    defaultInput.addEventListener('input', (e) => { col.defaultValue = (e.target as HTMLInputElement).value; });
+    defaultInput.addEventListener('change', pushHistory);
   }
 
   (tr.querySelector('.f-pk') as HTMLInputElement).addEventListener('change', (e) => {
@@ -352,7 +358,7 @@ function buildBody(entity: Entity): HTMLElement {
   const table = document.createElement('table');
   table.className = 'col-grid';
   table.innerHTML =
-    '<thead><tr><th></th><th>#</th><th>Name</th><th>Comment</th><th>Data type</th><th>PK</th><th>Null</th><th>FK</th><th></th></tr></thead>' +
+    '<thead><tr><th></th><th>#</th><th>Name</th><th>Comment</th><th>Data type</th><th>Default</th><th>PK</th><th>Null</th><th>FK</th><th></th></tr></thead>' +
     '<tbody></tbody>';
   wrap.appendChild(table);
   gridBody = table.querySelector('tbody')!;

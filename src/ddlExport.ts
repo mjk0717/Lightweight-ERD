@@ -83,7 +83,9 @@ function generateDdl(entity: Entity, opts?: DdlGenOptions): string {
   const qualifiedName = qualifiedTableName(entity.name, vendor, opts?.owner);
 
   const colLines = entity.columns.map((c) => {
-    let line = '  ' + quoteIdentifier(c.name, vendor) + ' ' + c.dataType + (c.nullable ? '' : ' NOT NULL');
+    const def = (c.defaultValue || '').trim();
+    let line = '  ' + quoteIdentifier(c.name, vendor) + ' ' + c.dataType +
+      (def ? ' DEFAULT ' + def : '') + (c.nullable ? '' : ' NOT NULL');
     if (isMySql && c.comment) line += ' COMMENT \'' + escapeSqlString(c.comment) + '\'';
     return line;
   });

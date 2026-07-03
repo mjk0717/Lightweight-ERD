@@ -132,6 +132,10 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
       const name = colMatch[1];
       const dataType = colMatch[2].replace(/\s+/g, '');
       const nullable = !/NOT\s+NULL/i.test(c);
+      // Best-effort DEFAULT capture: everything after DEFAULT up to NOT NULL /
+      // ENABLE/DISABLE / a trailing constraint keyword / end of clause.
+      const defMatch = c.match(/\bDEFAULT\s+([\s\S]+?)(?:\s+NOT\s+NULL|\s+NULL\b|\s+ENABLE\b|\s+DISABLE\b|\s+PRIMARY\b|\s+UNIQUE\b|\s+CHECK\b|\s+REFERENCES\b|\s*$)/i);
+      const defaultValue = defMatch ? defMatch[1].trim() : '';
       columns.push({
         id: nextId('col'),
         name,
@@ -140,6 +144,7 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
         pk: false,
         fk: false,
         nullable,
+        defaultValue,
         isSystem: false,
         systemColId: null
       });

@@ -6,6 +6,10 @@ export interface Column {
   pk: boolean;
   fk: boolean;
   nullable: boolean;
+  // Column DEFAULT value/expression, verbatim (e.g. "0", "'N'",
+  // "SYSDATE"). Empty string means no default. Optional so older saved
+  // projects/JSON without the field still load.
+  defaultValue?: string;
   isSystem: boolean;
   systemColId: string | null;
 }
