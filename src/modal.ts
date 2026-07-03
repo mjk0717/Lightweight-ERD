@@ -59,6 +59,9 @@ function open(opts: ModalOptions): ModalHandle {
   const box = document.createElement('div');
   box.className = 'modal-box';
   if (opts.width) box.style.width = opts.width;
+  // Wizard modals (Import/Export) get full-width footer buttons - detected by
+  // the step indicator in their body so callers need no extra flag.
+  if (opts.body && opts.body.querySelector('.wizard-steps')) box.classList.add('modal-wizard');
 
   const header = document.createElement('div');
   header.className = 'modal-header';
@@ -132,31 +135,29 @@ function transition(opts: ModalOptions, direction: 'left' | 'right'): ModalHandl
   const oldHeight = bodyEl.getBoundingClientRect().height;
   if (opts.width) box.style.width = opts.width;
   if (titleEl) titleEl.textContent = opts.title || '';
+  if (opts.body.querySelector('.wizard-steps')) box.classList.add('modal-wizard');
 
   const oldPane = document.createElement('div');
   oldPane.className = 'modal-slide-pane';
   while (bodyEl.firstChild) oldPane.appendChild(bodyEl.firstChild);
 
-  // Measure the new content's natural height before it's touched by any of
-  // the sliding-pane machinery below (absolute positioning + a frozen
-  // bodyEl height would both throw off a plain getBoundingClientRect() read
-  // here) - appended as a normal-flow child of the still-unconstrained,
-  // already-childless bodyEl, this height is exactly what it'll be once
-  // finish() unwraps it for real.
-  const newPane = document.createElement('div');
-  newPane.appendChild(opts.body);
-  bodyEl.appendChild(newPane);
-  const newHeight = newPane.getBoundingClientRect().height;
-  newPane.remove();
-
-  // Only now switch bodyEl into slide mode: position:relative so the two
-  // absolutely-positioned panes below use it as their containing block, and
-  // an explicit (frozen) height so removing normal-flow content doesn't
-  // collapse it before the height transition below takes over.
+  // Enter slide mode FIRST, before measuring: while sliding, bodyEl's own
+  // padding is dropped and the panes carry it instead (see the CSS). That
+  // makes the animated/final states identical - the padding-inset content
+  // position and the height both match once finish() unwraps the pane - so
+  // nothing shifts or resizes when the animation ends. The new pane is
+  // measured in-flow (position:static) so its height already includes that
+  // padding and equals the height bodyEl settles at.
   bodyEl.classList.add('modal-body-sliding');
   bodyEl.style.height = oldHeight + 'px';
+
+  const newPane = document.createElement('div');
   newPane.className = 'modal-slide-pane';
+  newPane.appendChild(opts.body);
+  newPane.style.position = 'static';
   bodyEl.appendChild(newPane);
+  const newHeight = newPane.getBoundingClientRect().height;
+  newPane.style.position = '';
   bodyEl.appendChild(oldPane);
 
   const outSign = direction === 'left' ? -1 : 1;
