@@ -21,13 +21,25 @@ function bounds(): Bounds | null {
   const entities = state.data.entities;
   if (!entities.length) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  entities.forEach((e) => {
-    const box = entityRenderer.getEntityBox(e.id)!;
-    minX = Math.min(minX, box.x);
-    minY = Math.min(minY, box.y);
-    maxX = Math.max(maxX, box.x + box.w);
-    maxY = Math.max(maxY, box.y + box.h);
+  const grow = (x: number, y: number, w: number, h: number): void => {
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+  };
+  entities.forEach((e) => { const box = entityRenderer.getEntityBox(e.id)!; grow(box.x, box.y, box.w, box.h); });
+
+  // Also include the on-screen relation geometry. Relation lines are drawn in
+  // world coordinates in #relation-svg, so each relation group's getBBox() is
+  // its exact world-space extent - covering curves that bow out, self-loop
+  // arcs, cardinality markers and labels that reach past the table boxes.
+  // Without this the bounding box is entities-only and any such overhang gets
+  // clipped out of the exported image.
+  document.querySelectorAll('#relation-svg .relation').forEach((g) => {
+    try {
+      const b = (g as unknown as SVGGraphicsElement).getBBox();
+      if (b.width || b.height) grow(b.x, b.y, b.width, b.height);
+    } catch (e) { /* not laid out yet - skip */ }
   });
+
   return { minX: minX - MARGIN, minY: minY - MARGIN, maxX: maxX + MARGIN, maxY: maxY + MARGIN };
 }
 
