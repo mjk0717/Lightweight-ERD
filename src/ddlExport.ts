@@ -1,6 +1,6 @@
 import { state } from './state';
 import { modal } from './modal';
-import { escapeHtml } from './util';
+import { escapeHtml, copyToClipboard } from './util';
 import { Column, Entity, Relation } from './types';
 
 function escapeSqlString(s: string): string {
@@ -61,25 +61,6 @@ function generateFkConstraintDdl(relation: Relation, sourceEntity: Entity, targe
   return 'ALTER TABLE ' + qualifiedTableName(sourceEntity.name, owner) + ' ADD CONSTRAINT "' + constraintName + '" FOREIGN KEY (' +
     sourceCols.map((c) => '"' + c.name + '"').join(', ') + ') REFERENCES ' + qualifiedTableName(targetEntity.name, owner) + ' (' +
     targetCols.map((c) => '"' + c.name + '"').join(', ') + ');';
-}
-
-function copyToClipboard(text: string): void {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  } else {
-    fallbackCopy(text);
-  }
-}
-
-function fallbackCopy(text: string): void {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); } catch (e) { /* clipboard unavailable - user can still select the text manually */ }
-  document.body.removeChild(ta);
 }
 
 // Toolbar-level export: a checklist of every table (all checked by default)

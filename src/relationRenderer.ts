@@ -424,6 +424,186 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
 
 const nodeMap = new Map<string, SVGGElement>();
 
+// ---------- line-crossing hops ----------
+// Where two different relations' lines actually cross (not just meet at a
+// shared entity edge), the line reads as ambiguous - is that an X or a
+// junction? Standard schematic convention: give one of the two lines a
+// small semicircular "hop" over the crossing point so it visually reads as
+// passing over/under rather than connecting. Detection works on a dense
+// polyline sample of each relation's already-computed path (getPointAtLength
+// handles bezier/angular/arc paths uniformly, so this needs no path-type-
+// specific math) - only relations that actually have a crossing get their
+// visible line rebuilt from that polyline; everything else keeps its
+// original smooth curve untouched.
+const HOP_RADIUS = 7;
+const CROSSING_SAMPLE_STEP = 6;
+
+function vSub(a: Point, b: Point): Point { return { x: a.x - b.x, y: a.y - b.y }; }
+function vAdd(a: Point, b: Point): Point { return { x: a.x + b.x, y: a.y + b.y }; }
+function vScale(a: Point, k: number): Point { return { x: a.x * k, y: a.y * k }; }
+function vNorm(a: Point): Point { const len = Math.hypot(a.x, a.y) || 1; return { x: a.x / len, y: a.y / len }; }
+
+function samplePath(pathEl: SVGPathElement): Point[] {
+  const total = pathEl.getTotalLength();
+  if (!total || !isFinite(total)) return [];
+  const steps = Math.max(2, Math.ceil(total / CROSSING_SAMPLE_STEP));
+  const pts: Point[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const p = pathEl.getPointAtLength((i / steps) * total);
+    pts.push({ x: p.x, y: p.y });
+  }
+  return pts;
+}
+
+function bboxOf(points: Point[]): Box {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  points.forEach((p) => {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  });
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function bboxesOverlap(a: Box, b: Box, pad: number): boolean {
+  return a.x - pad <= b.x + b.w + pad && b.x - pad <= a.x + a.w + pad &&
+    a.y - pad <= b.y + b.h + pad && b.y - pad <= a.y + a.h + pad;
+}
+
+// Proper interior crossing only (both t and u strictly inside (0,1), with a
+// small margin) - excludes lines merely touching near their shared endpoints.
+function segIntersection(p1: Point, p2: Point, p3: Point, p4: Point): { t: number; point: Point } | null {
+  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
+  if (t <= 0.03 || t >= 0.97 || u <= 0.03 || u >= 0.97) return null;
+  return { t, point: { x: p1.x + t * d1x, y: p1.y + t * d1y } };
+}
+
+interface Crossing { segIndex: number; t: number; point: Point }
+
+interface CrossingEntry { id: string; points: Point[] }
+
+// A crossing this close to either line's own entity edge falls inside (or
+// right next to) that edge's cardinality marker artwork - hopping there
+// reads as visual clutter on top of the marker rather than a clean jump, so
+// it's better left as a plain (if slightly overlapping) line than "fixed"
+// with a hop that just adds more mess right where the marker already is.
+const MIN_EDGE_DISTANCE = MARKER_CLEARANCE + HOP_RADIUS;
+
+function distanceToNearestEndpoint(pt: Point, points: Point[]): number {
+  const first = points[0], last = points[points.length - 1];
+  return Math.min(Math.hypot(pt.x - first.x, pt.y - first.y), Math.hypot(pt.x - last.x, pt.y - last.y));
+}
+
+// Two curves that run close and nearly parallel for a stretch (rather than
+// crossing cleanly once) get flagged on several adjacent sample segments in
+// a row instead of one - collapsing anything within this distance of the
+// previously accepted crossing turns that cluster back into a single hop.
+const MIN_CROSSING_GAP = HOP_RADIUS * 3;
+
+function dedupeCrossings(crossings: Crossing[]): Crossing[] {
+  const sorted = crossings.slice().sort((a, b) => (a.segIndex + a.t) - (b.segIndex + b.t));
+  const out: Crossing[] = [];
+  sorted.forEach((c) => {
+    const prev = out[out.length - 1];
+    if (prev && Math.hypot(c.point.x - prev.point.x, c.point.y - prev.point.y) < MIN_CROSSING_GAP) return;
+    out.push(c);
+  });
+  return out;
+}
+
+// Deterministic per crossing pair: the lexicographically smaller relation id
+// always yields (gets the hop), so the choice is stable across re-renders
+// regardless of draw order.
+function computeLineCrossingHops(entries: CrossingEntry[]): Map<string, Crossing[]> {
+  const hopsByRelation = new Map<string, Crossing[]>();
+  const boxes = entries.map((e) => bboxOf(e.points));
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      if (entries[i].id === entries[j].id) continue;
+      if (!bboxesOverlap(boxes[i], boxes[j], HOP_RADIUS)) continue;
+      const yielderIdx = entries[i].id < entries[j].id ? i : j;
+      const otherIdx = yielderIdx === i ? j : i;
+      const yielder = entries[yielderIdx], other = entries[otherIdx];
+      for (let si = 0; si < yielder.points.length - 1; si++) {
+        for (let sj = 0; sj < other.points.length - 1; sj++) {
+          const hit = segIntersection(yielder.points[si], yielder.points[si + 1], other.points[sj], other.points[sj + 1]);
+          if (!hit) continue;
+          if (distanceToNearestEndpoint(hit.point, yielder.points) < MIN_EDGE_DISTANCE) continue;
+          if (distanceToNearestEndpoint(hit.point, other.points) < MIN_EDGE_DISTANCE) continue;
+          const list = hopsByRelation.get(yielder.id) || [];
+          list.push({ segIndex: si, t: hit.t, point: hit.point });
+          hopsByRelation.set(yielder.id, list);
+        }
+      }
+    }
+  }
+  hopsByRelation.forEach((list, id) => hopsByRelation.set(id, dedupeCrossings(list)));
+  return hopsByRelation;
+}
+
+// Rebuilds the polyline as straight segments, replacing a small window
+// around each crossing with a quadratic-bezier bump. Unlike an earlier
+// version of this, "before"/"after" are real sampled points already on the
+// curve (not linearly extrapolated from the crossing point along the local
+// tangent) - extrapolating drifts away from the actual curve whenever it's
+// bending sharply right at the crossing (e.g. near an entity edge, where
+// the bezier control points curl tightly), producing a visibly kinked bump.
+// Anchoring to real points guarantees the bump always meets the rest of the
+// line cleanly regardless of local curvature. The bump's control point is
+// placed so the curve's midpoint sits out from the chord on whichever
+// perpendicular points further up-screen - always bulges "up" rather than
+// alternating with travel direction.
+function buildHopPath(points: Point[], crossings: Crossing[]): string {
+  if (!points.length) return '';
+  if (!crossings.length) return 'M ' + points.map((p) => p.x + ' ' + p.y).join(' L ');
+
+  const bySegIndex = new Map(crossings.map((c) => [c.segIndex, c]));
+  let d = 'M ' + points[0].x + ' ' + points[0].y;
+  let i = 0;
+  while (i < points.length - 1) {
+    if (bySegIndex.has(i)) {
+      const before = points[i];
+      const afterIdx = Math.min(points.length - 1, i + 2);
+      const after = points[afterIdx];
+      const dir = vNorm(vSub(after, before));
+      const mid = { x: (before.x + after.x) / 2, y: (before.y + after.y) / 2 };
+      const perpA: Point = { x: -dir.y, y: dir.x };
+      const perpB: Point = { x: dir.y, y: -dir.x };
+      const perp = perpA.y <= perpB.y ? perpA : perpB;
+      const bumpHeight = Math.max(HOP_RADIUS, Math.hypot(after.x - before.x, after.y - before.y) / 2);
+      const control = vAdd(mid, vScale(perp, bumpHeight * 2));
+      d += ' Q ' + control.x + ' ' + control.y + ', ' + after.x + ' ' + after.y;
+      i = afterIdx;
+      continue;
+    }
+    i++;
+    d += ' L ' + points[i].x + ' ' + points[i].y;
+  }
+  return d;
+}
+
+function applyLineCrossingHops(): void {
+  const entries: (CrossingEntry & { line: SVGPathElement })[] = [];
+  nodeMap.forEach((node, id) => {
+    if (node.style.display === 'none') return;
+    const hit = node.querySelector('.relation-hit') as SVGPathElement;
+    const line = node.querySelector('.relation-line') as SVGPathElement;
+    const points = samplePath(hit);
+    if (points.length >= 2) entries.push({ id, points, line });
+  });
+  const hopsByRelation = computeLineCrossingHops(entries);
+  entries.forEach((entry) => {
+    const crossings = hopsByRelation.get(entry.id);
+    if (crossings && crossings.length) entry.line.setAttribute('d', buildHopPath(entry.points, crossings));
+  });
+}
+
 function render(): void {
   const relations = state.data.relations;
   const seen = new Set<string>();
@@ -440,6 +620,7 @@ function render(): void {
   nodeMap.forEach((node, id) => {
     if (!seen.has(id)) { node.remove(); nodeMap.delete(id); }
   });
+  applyLineCrossingHops();
 }
 
 function setTempLine(fromPt: Point, fromSide: AnchorSide, toPt: Point, toSide: AnchorSide, isSelf: boolean = false): void {

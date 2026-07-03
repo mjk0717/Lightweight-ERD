@@ -47,6 +47,25 @@ export function downloadText(text: string, filename: string, mime?: string): voi
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function fallbackCopy(text: string): void {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* clipboard unavailable - user can still select the text manually */ }
+  document.body.removeChild(ta);
+}
+
+export function copyToClipboard(text: string): void {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
