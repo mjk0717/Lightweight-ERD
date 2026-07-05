@@ -1,6 +1,6 @@
 <div align="center">
 
-![Lightweight-ERD banner](docs/banner.svg)
+![Light-ERD banner](docs/banner.png)
 
 [![Live Demo](https://img.shields.io/badge/demo-mjk0717.github.io-brightgreen?logo=githubpages&logoColor=white)](https://mjk0717.github.io/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -16,7 +16,7 @@ No install, no server, no accounts — [**try it right now in your browser →**
 
 ---
 
-## Why Lightweight-ERD?
+## Why Light-ERD?
 
 - **Zero friction** — open `index.html` (or the [live page](https://mjk0717.github.io/)) and start modeling. Everything runs client-side; your diagrams never leave your machine.
 - **Real database workflows** — round-trip your schema: import existing DDL, edit visually, export DDL/PNG/JSON back out. Catalog-extraction SQL generators for Oracle, MySQL, PostgreSQL, and SQL Server are built in.
@@ -46,8 +46,8 @@ Open **<https://mjk0717.github.io/>** — the editor runs entirely in your brows
 ### Run it locally
 
 ```bash
-git clone https://github.com/mjk0717/Lightweight-ERD-Community.git
-cd Lightweight-ERD-Community
+git clone https://github.com/mjk0717/Light-ERD-Community.git
+cd Light-ERD-Community
 npm install
 npm run build
 ```
