@@ -4,6 +4,7 @@ import { nextId, readFileAsText, escapeHtml, copyToClipboard } from './util';
 import { parse } from './ddlParser';
 import { DbVendor, DB_VENDORS, generateExtractSql } from './ddlExtractSql';
 import { DEFAULT_SOURCE_CARDINALITY, DEFAULT_TARGET_CARDINALITY } from './cardinality';
+import { theme } from './theme';
 import { Column, DdlParseResult, Entity, RelationColumnPair } from './types';
 
 interface ImportSummary {
@@ -11,9 +12,48 @@ interface ImportSummary {
   relationCount: number;
 }
 
+const IMPORT_START_X = 60;
+const IMPORT_START_Y = 60;
+const IMPORT_COLUMN_GAP = 60;
+const IMPORT_ROW_GAP = 60;
+const IMPORT_EXISTING_GAP = 80;
+
+function entityHeight(entity: Entity): number {
+  return theme.headerHeight + entity.columns.length * theme.rowHeight;
+}
+
+function nextImportStartY(): number {
+  if (!state.data.entities.length) return IMPORT_START_Y;
+  return state.data.entities.reduce((maxY, entity) => {
+    return Math.max(maxY, entity.y + entityHeight(entity));
+  }, IMPORT_START_Y) + IMPORT_EXISTING_GAP;
+}
+
+function importColumnCount(tableCount: number): number {
+  return Math.max(1, Math.floor(Math.sqrt(Math.max(tableCount, 1))));
+}
+
+function createImportLayout(tableCount: number): (entity: Entity) => { x: number; y: number } {
+  const columnCount = importColumnCount(tableCount);
+  const nextYByColumn = Array.from({ length: columnCount }, () => nextImportStartY());
+  let nextColumn = 0;
+
+  return (entity: Entity) => {
+    const column = nextColumn;
+    const x = IMPORT_START_X + column * (theme.entityWidth + IMPORT_COLUMN_GAP);
+    const y = nextYByColumn[column];
+    nextYByColumn[column] = y + entityHeight(entity) + IMPORT_ROW_GAP;
+    nextColumn = (nextColumn + 1) % columnCount;
+    return { x, y };
+  };
+}
+
 function importParsedResult(result: DdlParseResult): ImportSummary {
   const nameToEntityId: Record<string, string> = {};
   state.data.entities.forEach((e) => { nameToEntityId[e.name.toUpperCase()] = e.id; });
+  const existingTableNames = new Set(Object.keys(nameToEntityId));
+  const newTableCount = result.tables.filter((table) => !existingTableNames.has(table.name.toUpperCase())).length;
+  const nextImportPosition = createImportLayout(newTableCount);
 
   result.tables.forEach((table) => {
     const upper = table.name.toUpperCase();
@@ -26,9 +66,11 @@ function importParsedResult(result: DdlParseResult): ImportSummary {
       entity.columns = columns;
       state.applySystemColumnsToEntity(entity);
     } else {
-      const pos = state.nextEntityPosition();
-      const entity: Entity = { id: nextId('ent'), name: table.name, comment: table.comment || '', x: pos.x, y: pos.y, columns, headerColor: null };
+      const entity: Entity = { id: nextId('ent'), name: table.name, comment: table.comment || '', x: 0, y: 0, columns, headerColor: null };
       state.applySystemColumnsToEntity(entity);
+      const pos = nextImportPosition(entity);
+      entity.x = pos.x;
+      entity.y = pos.y;
       state.addEntity(entity);
       nameToEntityId[upper] = entity.id;
     }
@@ -150,7 +192,7 @@ function open(): void {
     });
     wireStepNav(body);
 
-    modal.transition({ title: 'Reverse Engineering', width: '640px', body, actions: [] }, direction);
+    modal.transition({ title: 'Import', width: '640px', body, actions: [] }, direction);
   }
 
   function renderExecuteSql(direction: Direction = 'left'): void {
@@ -186,7 +228,7 @@ function open(): void {
     wireStepNav(body);
 
     modal.transition({
-      title: 'Reverse Engineering',
+      title: 'Import',
       width: '820px',
       body,
       actions: [
@@ -241,7 +283,7 @@ function open(): void {
     wireStepNav(body);
 
     modal.transition({
-      title: 'Reverse Engineering',
+      title: 'Import',
       width: '700px',
       body,
       actions: [
@@ -301,7 +343,7 @@ function open(): void {
     wireStepNav(body);
 
     const opts = {
-      title: 'Reverse Engineering',
+      title: 'Import',
       width: '700px',
       body,
       actions: applied

@@ -3,6 +3,7 @@ import { modal } from './modal';
 import { escapeHtml } from './util';
 import { relationInteraction } from './relationInteraction';
 import { CARDINALITY_GROUPS, DEFAULT_SOURCE_CARDINALITY, DEFAULT_TARGET_CARDINALITY, sourceCardinalityOf, targetCardinalityOf } from './cardinality';
+import { displayDataType } from './columnTypes';
 import { Cardinality, Column, Entity } from './types';
 
 function cardinalitySelectHtml(className: string, selected: Cardinality): string {
@@ -30,7 +31,7 @@ function previewLine(sourceEntity: Entity, targetColumn: Column, targetEntityNam
   // from auto-reuse), so it stays exactly as it is - just gets fk:true,
   // making this a non-identifying relationship, no column movement.
   if (!plan.isNew) return 'Existing column "' + plan.name + '" on ' + sourceEntity.name + ' will be marked as FK (non-identifying) - no change to its position or PK status.';
-  return 'New FK column "' + plan.name + '" (' + targetColumn.dataType + ') will be added to ' + sourceEntity.name + ' as part of its primary key.';
+  return 'New FK column "' + plan.name + '" (' + displayDataType(targetColumn, state.data.designMode) + ') will be added to ' + sourceEntity.name + ' as part of its primary key.';
 }
 
 function targetChecklistHtml(entity: Entity, checkedIds: string[]): string {
@@ -38,14 +39,14 @@ function targetChecklistHtml(entity: Entity, checkedIds: string[]): string {
     const flag = c.pk ? ' (PK)' : '';
     const checked = checkedIds.indexOf(c.id) !== -1 ? ' checked' : '';
     return '<label class="col-check-row"><input type="checkbox" class="f-target-col-check" value="' + c.id + '"' + checked + '> ' +
-      escapeHtml(c.name + flag + ' - ' + c.dataType) + '</label>';
+      escapeHtml(c.name + flag + ' - ' + displayDataType(c, state.data.designMode)) + '</label>';
   }).join('');
 }
 
 function existingColumnSelectHtml(entity: Entity): string {
   return entity.columns.map((c) => {
     const flag = c.pk ? ' (PK)' : (c.fk ? ' (FK)' : '');
-    return '<option value="' + c.id + '">' + escapeHtml(c.name + flag + ' - ' + c.dataType) + '</option>';
+    return '<option value="' + c.id + '">' + escapeHtml(c.name + flag + ' - ' + displayDataType(c, state.data.designMode)) + '</option>';
   }).join('');
 }
 

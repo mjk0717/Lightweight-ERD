@@ -1,6 +1,8 @@
 import { state } from './state';
 import { theme } from './theme';
 import { escapeHtml } from './util';
+import { search } from './search';
+import { displayDataType, logicalDataType, physicalDataType } from './columnTypes';
 import { Box, Column, Entity, RowCenter } from './types';
 
 let layerEl: HTMLElement;
@@ -49,6 +51,10 @@ function displayColumnName(col: Column): string {
   return col.name;
 }
 
+function displayColumnDataType(col: Column): string {
+  return displayDataType(col, state.data.designMode);
+}
+
 function rowClass(col: Column, idx: number): string {
   const cls = ['entity-row'];
   if (col.isSystem) cls.push('row-system');
@@ -66,7 +72,7 @@ function rowClass(col: Column, idx: number): string {
 // dblclick requires the same DOM node to receive both clicks.
 function rowsSignature(entity: Entity): string {
   return state.data.designMode + '|' + JSON.stringify(entity.columns.map((c) =>
-    [c.id, c.name, c.comment, c.dataType, c.pk, c.fk, c.nullable, c.isSystem]
+    [c.id, c.name, c.comment, c.dataType, c.logicalDataType, c.physicalDataType, c.pk, c.fk, c.nullable, c.isSystem]
   ));
 }
 
@@ -101,11 +107,13 @@ function updateEntityNode(node: HTMLElement, entity: Entity): void {
       row.className = rowClass(col, idx);
       row.dataset.colId = col.id;
       row.dataset.entityId = entity.id;
-      row.title = col.name + ' : ' + col.dataType + ' ' + (col.nullable ? 'NULL' : 'NOT NULL') + (col.comment ? '\n' + col.comment : '');
+      row.title = col.name + ' : ' + displayColumnDataType(col) + ' ' + (col.nullable ? 'NULL' : 'NOT NULL') +
+        (logicalDataType(col) !== physicalDataType(col) ? '\nLogical: ' + logicalDataType(col) + '\nPhysical: ' + physicalDataType(col) : '') +
+        (col.comment ? '\n' + col.comment : '');
       row.innerHTML =
         '<span class="row-flag">' + rowFlag(col) + '</span>' +
         '<span class="row-name">' + escapeHtml(displayColumnName(col)) + '</span>' +
-        '<span class="row-type">' + escapeHtml(col.dataType) +
+        '<span class="row-type">' + escapeHtml(displayColumnDataType(col)) +
           (col.nullable ? '' : '<span class="not-null-mark" title="NOT NULL">*</span>') +
         '</span>';
       body.appendChild(row);
@@ -124,17 +132,31 @@ function updateEntityNode(node: HTMLElement, entity: Entity): void {
   });
 
   node.classList.toggle('selected', state.isEntitySelected(entity.id));
+  node.classList.toggle('search-dimmed', search.isActive() && !search.matchesEntity(entity));
 }
 
 function highlightedColumnIds(entityId: string): Set<string> {
-  const selected = state.data.selected;
-  if (!selected || selected.type !== 'relation') return new Set();
-  const relation = state.getRelation(selected.id);
-  if (!relation) return new Set();
   const ids = new Set<string>();
-  relation.columnPairs.forEach((p) => {
-    if (relation.sourceEntityId === entityId) ids.add(p.sourceColumnId);
-    if (relation.targetEntityId === entityId) ids.add(p.targetColumnId);
+  const selected = state.data.selected;
+  if (selected && selected.type === 'relation') {
+    const relation = state.getRelation(selected.id);
+    if (relation) {
+      relation.columnPairs.forEach((p) => {
+        if (relation.sourceEntityId === entityId) ids.add(p.sourceColumnId);
+        if (relation.targetEntityId === entityId) ids.add(p.targetColumnId);
+      });
+    }
+    return ids;
+  }
+
+  const selectedEntityIds = new Set(state.data.selectedEntityIds);
+  if (!selectedEntityIds.size) return ids;
+  state.data.relations.forEach((relation) => {
+    if (!selectedEntityIds.has(relation.sourceEntityId) && !selectedEntityIds.has(relation.targetEntityId)) return;
+    relation.columnPairs.forEach((p) => {
+      if (relation.sourceEntityId === entityId) ids.add(p.sourceColumnId);
+      if (relation.targetEntityId === entityId) ids.add(p.targetColumnId);
+    });
   });
   return ids;
 }
@@ -165,10 +187,11 @@ function init(layer: HTMLElement): void {
   state.on('change', render);
   state.on('move', render);
   state.on('select', render);
+  search.onChange(render);
   render();
 }
 
 export const entityRenderer = {
   init, render, entityHeight, getEntityBox, getColumnRowCenter,
-  displayName: displayEntityName, displayColumnName
+  displayName: displayEntityName, displayColumnName, displayColumnDataType
 };

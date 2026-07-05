@@ -4,6 +4,7 @@ import { escapeHtml, copyToClipboard, downloadDataUrl } from './util';
 import { ddlExport, BulkDdlOptions } from './ddlExport';
 import { pngExport } from './pngExport';
 import { DbVendor, DB_VENDORS } from './ddlExtractSql';
+import { appTheme } from './appTheme';
 import { ModalAction } from './types';
 
 // Export counterpart to the Import DDL wizard - same Plan -> Execute ->
@@ -46,6 +47,7 @@ function open(): void {
   let indexTablespace = '';
   let indexTablespaceOn = false;
   let selectedIds: string[] = state.data.entities.map((e) => e.id);
+  let pngDarkMode = appTheme.isDark();
 
   function wireStepNav(body: HTMLElement): void {
     (Array.from(body.querySelectorAll('.wizard-step.done')) as HTMLElement[]).forEach((chip) => {
@@ -90,7 +92,7 @@ function open(): void {
     });
     wireStepNav(body);
 
-    modal.transition({ title: 'Forward Engineering', width: '640px', body, actions: [] }, direction);
+    modal.transition({ title: 'Export', width: '640px', body, actions: [] }, direction);
   }
 
   function renderExecute(direction: Direction = 'left'): void {
@@ -103,12 +105,15 @@ function open(): void {
     body.innerHTML =
       stepsHtml('execute') +
       '<p class="hint">A PNG snapshot of the whole diagram (' + state.data.entities.length +
-      ' table' + (state.data.entities.length === 1 ? '' : 's') + ') will be rendered at 2&times; resolution on a white background.</p>' +
+      ' table' + (state.data.entities.length === 1 ? '' : 's') + ') will be rendered at 2&times; resolution.</p>' +
+      '<label class="col-check-row ddl-export-fk-toggle"><input type="checkbox" class="f-png-dark-mode"' + (pngDarkMode ? ' checked' : '') + '> Export as dark mode PNG</label>' +
       '<p class="hint">Continue to preview and download it.</p>';
+    const darkToggle = body.querySelector('.f-png-dark-mode') as HTMLInputElement;
+    darkToggle.addEventListener('change', () => { pngDarkMode = darkToggle.checked; });
     wireStepNav(body);
 
     modal.transition({
-      title: 'Forward Engineering',
+      title: 'Export',
       width: '640px',
       body,
       actions: [
@@ -190,7 +195,7 @@ function open(): void {
     wireStepNav(body);
 
     modal.transition({
-      title: 'Forward Engineering',
+      title: 'Export',
       width: '820px',
       body,
       actions: [
@@ -209,7 +214,7 @@ function open(): void {
   }
 
   function renderResultPng(direction: Direction): void {
-    const dataUrl = pngExport.renderDataUrl();
+    const dataUrl = pngExport.renderDataUrl({ darkMode: pngDarkMode });
     const body = document.createElement('div');
     body.innerHTML =
       stepsHtml('result') +
@@ -222,7 +227,7 @@ function open(): void {
     const actions: ModalAction[] = [{ label: 'Back', onClick: () => renderExecute('right') }];
     if (dataUrl) actions.push({ label: 'Download PNG', variant: 'primary', onClick: () => downloadDataUrl(dataUrl, 'erd-diagram.png') });
 
-    modal.transition({ title: 'Forward Engineering', width: '700px', body, actions }, direction);
+    modal.transition({ title: 'Export', width: '700px', body, actions }, direction);
   }
 
   function renderResultSql(direction: Direction): void {
@@ -236,7 +241,7 @@ function open(): void {
     wireStepNav(body);
 
     modal.transition({
-      title: 'Forward Engineering',
+      title: 'Export',
       width: '760px',
       body,
       actions: [

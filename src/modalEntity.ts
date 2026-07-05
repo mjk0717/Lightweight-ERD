@@ -2,6 +2,7 @@ import { state } from './state';
 import { modal } from './modal';
 import { escapeHtml, nextId, dataTypeSuggestions } from './util';
 import { HEADER_COLOR_PALETTE, theme } from './theme';
+import { logicalDataType, physicalDataType, setLogicalDataType, setPhysicalDataType } from './columnTypes';
 import { Column, Entity } from './types';
 
 let draft: Entity | null = null;
@@ -59,10 +60,11 @@ function onModalKeydown(e: KeyboardEvent): void {
     const b = rangeBounds();
     if (!b || (b.r0 === b.r1 && b.c0 === b.c1)) return; // single/no cell - let normal text editing happen
     e.preventDefault();
+    const fields = cellFields();
     for (let r = b.r0; r <= b.r1; r++) {
       const col = draft.columns[r];
       if (!col || col.isSystem) continue;
-      for (let c = b.c0; c <= b.c1; c++) (col as any)[CELL_FIELDS[c]] = '';
+      for (let c = b.c0; c <= b.c1; c++) setColumnField(col, fields[c], '');
     }
     renderGrid();
     refreshSelectionHighlight();
@@ -71,18 +73,36 @@ function onModalKeydown(e: KeyboardEvent): void {
 }
 
 // Excel-like range selection/copy-paste over the grid's text columns (row
-// reordering has its own drag handle, so this only spans Name/Comment/Data
-// type - the columns that are genuinely free-text).
-type CellField = 'name' | 'comment' | 'dataType' | 'defaultValue';
-const CELL_FIELDS: CellField[] = ['name', 'comment', 'dataType', 'defaultValue'];
-const CELL_CLASSES = ['f-name', 'f-comment', 'f-type', 'f-default'];
+// reordering has its own drag handle, so this only spans the free-text
+// columns). Physical/logical column names swap with the current view.
+type CellField = 'name' | 'comment' | 'logicalDataType' | 'physicalDataType' | 'defaultValue';
 interface CellIdx { row: number; col: number; }
 let selAnchor: CellIdx | null = null;
 let selFocus: CellIdx | null = null;
 let isSelecting = false;
 
+function cellFields(): CellField[] {
+  const nameFields: CellField[] = state.data.designMode === 'logical' ? ['comment', 'name'] : ['name', 'comment'];
+  return nameFields.concat(['logicalDataType', 'physicalDataType', 'defaultValue']);
+}
+
+function cellClasses(): string[] {
+  const nameClasses = state.data.designMode === 'logical' ? ['f-comment', 'f-name'] : ['f-name', 'f-comment'];
+  return nameClasses.concat(['f-logical-type', 'f-physical-type', 'f-default']);
+}
+
 function newColumn(): Column {
-  return { id: nextId('col'), name: 'NEW_COLUMN', dataType: 'VARCHAR2(50)', comment: '', pk: false, fk: false, nullable: true, isSystem: false, systemColId: null };
+  return {
+    id: nextId('col'), name: 'NEW_COLUMN', dataType: 'VARCHAR2(50)',
+    logicalDataType: 'VARCHAR(50)', physicalDataType: 'VARCHAR2(50)',
+    comment: '', pk: false, fk: false, nullable: true, isSystem: false, systemColId: null
+  };
+}
+
+function setColumnField(col: Column, field: CellField, value: string): void {
+  if (field === 'logicalDataType') setLogicalDataType(col, value);
+  else if (field === 'physicalDataType') setPhysicalDataType(col, value);
+  else (col as unknown as Record<string, string>)[field] = value;
 }
 
 function renderRow(col: Column, idx: number): HTMLTableRowElement {
@@ -90,12 +110,19 @@ function renderRow(col: Column, idx: number): HTMLTableRowElement {
   // The dragged row is faded only while an actual drag is in progress (this
   // row is the one being dragged) - never on a plain mousedown/click.
   tr.className = 'col-row' + (col.isSystem ? ' col-row-system' : '') + (dragIndex === idx ? ' dragging' : '');
+  const physicalColumnCell =
+    '<td><input type="text" class="f-name" value="' + escapeHtml(col.name) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>';
+  const logicalColumnCell =
+    '<td><input type="text" class="f-comment" value="' + escapeHtml(col.comment || '') + '" ' + (col.isSystem ? 'disabled' : '') + '></td>';
+  const columnNameCells = state.data.designMode === 'logical'
+    ? logicalColumnCell + physicalColumnCell
+    : physicalColumnCell + logicalColumnCell;
   tr.innerHTML =
     '<td class="col-handle-cell"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>' +
     '<td class="col-order">' + (idx + 1) + '</td>' +
-    '<td><input type="text" class="f-name" value="' + escapeHtml(col.name) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
-    '<td><input type="text" class="f-comment" value="' + escapeHtml(col.comment || '') + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
-    '<td><input type="text" class="f-type" list="col-type-datalist" value="' + escapeHtml(col.dataType) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
+    columnNameCells +
+    '<td><input type="text" class="f-logical-type" list="logical-type-datalist" value="' + escapeHtml(logicalDataType(col)) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
+    '<td><input type="text" class="f-physical-type" list="physical-type-datalist" value="' + escapeHtml(physicalDataType(col)) + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td><input type="text" class="f-default" value="' + escapeHtml(col.defaultValue || '') + '" ' + (col.isSystem ? 'disabled' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-pk" ' + (col.pk ? 'checked' : '') + '></td>' +
     '<td class="col-check"><input type="checkbox" class="f-null" ' + (col.nullable ? 'checked' : '') + '></td>' +
@@ -112,10 +139,15 @@ function renderRow(col: Column, idx: number): HTMLTableRowElement {
     commentInput.addEventListener('input', (e) => { col.comment = (e.target as HTMLInputElement).value; });
     commentInput.addEventListener('change', pushHistory);
   }
-  const typeInput = tr.querySelector('.f-type') as HTMLInputElement | null;
-  if (typeInput) {
-    typeInput.addEventListener('input', (e) => { col.dataType = (e.target as HTMLInputElement).value; });
-    typeInput.addEventListener('change', pushHistory);
+  const logicalTypeInput = tr.querySelector('.f-logical-type') as HTMLInputElement | null;
+  if (logicalTypeInput) {
+    logicalTypeInput.addEventListener('input', (e) => { setLogicalDataType(col, (e.target as HTMLInputElement).value); });
+    logicalTypeInput.addEventListener('change', pushHistory);
+  }
+  const physicalTypeInput = tr.querySelector('.f-physical-type') as HTMLInputElement | null;
+  if (physicalTypeInput) {
+    physicalTypeInput.addEventListener('input', (e) => { setPhysicalDataType(col, (e.target as HTMLInputElement).value); });
+    physicalTypeInput.addEventListener('change', pushHistory);
   }
   const defaultInput = tr.querySelector('.f-default') as HTMLInputElement | null;
   if (defaultInput) {
@@ -187,7 +219,7 @@ function onDragEnd(): void {
 function cellInput(row: number, col: number): HTMLInputElement | null {
   const tr = gridBody.querySelectorAll('tr')[row] as HTMLElement | undefined;
   if (!tr) return null;
-  return tr.querySelector('.' + CELL_CLASSES[col]) as HTMLInputElement | null;
+  return tr.querySelector('.' + cellClasses()[col]) as HTMLInputElement | null;
 }
 
 function cellIndexOf(input: HTMLInputElement): CellIdx | null {
@@ -195,7 +227,7 @@ function cellIndexOf(input: HTMLInputElement): CellIdx | null {
   if (!tr) return null;
   const rows = Array.prototype.slice.call(gridBody.querySelectorAll('tr')) as HTMLElement[];
   const row = rows.indexOf(tr as HTMLElement);
-  const col = CELL_CLASSES.findIndex((cls) => input.classList.contains(cls));
+  const col = cellClasses().findIndex((cls) => input.classList.contains(cls));
   if (row === -1 || col === -1) return null;
   return { row, col };
 }
@@ -290,20 +322,21 @@ function onGridPaste(e: ClipboardEvent): void {
   e.preventDefault();
 
   let maxCol = 0;
+  const fields = cellFields();
   grid.forEach((vals, rOffset) => {
     const row = anchor.row + rOffset;
     const col = draft!.columns[row];
     if (!col || col.isSystem) return; // clamped to existing, non-system rows
     vals.forEach((val, cOffset) => {
       const c = anchor.col + cOffset;
-      if (c >= CELL_FIELDS.length) return;
+      if (c >= fields.length) return;
       maxCol = Math.max(maxCol, c);
-      (col as any)[CELL_FIELDS[c]] = val;
+      setColumnField(col, fields[c], val);
     });
   });
 
   selAnchor = anchor;
-  selFocus = { row: Math.min(anchor.row + grid.length - 1, draft.columns.length - 1), col: Math.min(maxCol, CELL_FIELDS.length - 1) };
+  selFocus = { row: Math.min(anchor.row + grid.length - 1, draft.columns.length - 1), col: Math.min(maxCol, fields.length - 1) };
   renderGrid();
   refreshSelectionHighlight();
   pushHistory();
@@ -320,16 +353,24 @@ function buildBody(entity: Entity): HTMLElement {
   const wrap = document.createElement('div');
   document.addEventListener('keydown', onModalKeydown);
 
-  const datalist = document.createElement('datalist');
-  datalist.id = 'col-type-datalist';
-  datalist.innerHTML = dataTypeSuggestions(state.data.designMode).map((t) => '<option value="' + t + '">').join('');
-  wrap.appendChild(datalist);
+  const logicalDatalist = document.createElement('datalist');
+  logicalDatalist.id = 'logical-type-datalist';
+  logicalDatalist.innerHTML = dataTypeSuggestions('logical').map((t) => '<option value="' + t + '">').join('');
+  wrap.appendChild(logicalDatalist);
+  const physicalDatalist = document.createElement('datalist');
+  physicalDatalist.id = 'physical-type-datalist';
+  physicalDatalist.innerHTML = dataTypeSuggestions('physical').map((t) => '<option value="' + t + '">').join('');
+  wrap.appendChild(physicalDatalist);
 
   const head = document.createElement('div');
   head.className = 'entity-modal-head';
-  head.innerHTML =
-    '<label>Table name<br><input type="text" class="f-entity-name" value="' + escapeHtml(draft!.name) + '"></label>' +
-    '<label>Comment<br><input type="text" class="f-entity-comment" value="' + escapeHtml(draft!.comment || '') + '"></label>';
+  const physicalNameField =
+    '<label>Physical Name<br><input type="text" class="f-entity-name" value="' + escapeHtml(draft!.name) + '"></label>';
+  const logicalNameField =
+    '<label>Logical Name<br><input type="text" class="f-entity-comment" value="' + escapeHtml(draft!.comment || '') + '"></label>';
+  head.innerHTML = state.data.designMode === 'logical'
+    ? logicalNameField + physicalNameField
+    : physicalNameField + logicalNameField;
   const nameInput = head.querySelector('.f-entity-name') as HTMLInputElement;
   const commentInput = head.querySelector('.f-entity-comment') as HTMLInputElement;
   nameInput.addEventListener('input', (e) => { draft!.name = (e.target as HTMLInputElement).value; });
@@ -357,8 +398,13 @@ function buildBody(entity: Entity): HTMLElement {
 
   const table = document.createElement('table');
   table.className = 'col-grid';
+  const physicalColumnHeader = '<th>Physical Column</th>';
+  const logicalColumnHeader = '<th>Logical Column</th>';
+  const columnNameHeaders = state.data.designMode === 'logical'
+    ? logicalColumnHeader + physicalColumnHeader
+    : physicalColumnHeader + logicalColumnHeader;
   table.innerHTML =
-    '<thead><tr><th></th><th>#</th><th>Name</th><th>Comment</th><th>Data type</th><th>Default</th><th>PK</th><th>Null</th><th>FK</th><th></th></tr></thead>' +
+    '<thead><tr><th></th><th>#</th>' + columnNameHeaders + '<th>Logical type</th><th>Physical type</th><th>Default</th><th>PK</th><th>Null</th><th>FK</th><th></th></tr></thead>' +
     '<tbody></tbody>';
   wrap.appendChild(table);
   gridBody = table.querySelector('tbody')!;
@@ -415,7 +461,7 @@ function open(entityId: string): void {
 
   modal.open({
     title: 'Table details',
-    width: '740px',
+    width: '900px',
     body,
     onClose: cleanupGridListeners,
     actions: [
@@ -449,7 +495,7 @@ function openNew(template: Entity): void {
 
   modal.open({
     title: 'Table details',
-    width: '740px',
+    width: '900px',
     body,
     onClose: cleanupGridListeners,
     actions: [

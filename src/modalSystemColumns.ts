@@ -1,6 +1,7 @@
 import { state } from './state';
 import { modal } from './modal';
 import { escapeHtml, dataTypeSuggestions } from './util';
+import { logicalDataType, physicalDataType, setLogicalDataType, setPhysicalDataType } from './columnTypes';
 import { SystemColumnDef } from './types';
 
 let draft: SystemColumnDef[] = [];
@@ -13,16 +14,22 @@ let dragMoved = false;
 
 // Excel-like range selection / copy-paste over the free-text columns, same as
 // the table details grid.
-type CellField = 'name' | 'comment' | 'dataType' | 'defaultValue';
-const CELL_FIELDS: CellField[] = ['name', 'comment', 'dataType', 'defaultValue'];
-const CELL_CLASSES = ['f-name', 'f-comment', 'f-type', 'f-default'];
+type CellField = 'name' | 'comment' | 'logicalDataType' | 'physicalDataType' | 'defaultValue';
+const CELL_FIELDS: CellField[] = ['name', 'comment', 'logicalDataType', 'physicalDataType', 'defaultValue'];
+const CELL_CLASSES = ['f-name', 'f-comment', 'f-logical-type', 'f-physical-type', 'f-default'];
 interface CellIdx { row: number; col: number; }
 let selAnchor: CellIdx | null = null;
 let selFocus: CellIdx | null = null;
 let isSelecting = false;
 
 function newDef(): SystemColumnDef {
-  return { id: '', name: 'NEW_COLUMN', dataType: 'VARCHAR2(50)', comment: '', defaultValue: '' };
+  return { id: '', name: 'NEW_COLUMN', dataType: 'VARCHAR2(50)', logicalDataType: 'VARCHAR(50)', physicalDataType: 'VARCHAR2(50)', comment: '', defaultValue: '' };
+}
+
+function setDefField(def: SystemColumnDef, field: CellField, value: string): void {
+  if (field === 'logicalDataType') setLogicalDataType(def, value);
+  else if (field === 'physicalDataType') setPhysicalDataType(def, value);
+  else (def as unknown as Record<string, string>)[field] = value;
 }
 
 function renderRow(def: SystemColumnDef, idx: number): HTMLTableRowElement {
@@ -33,13 +40,15 @@ function renderRow(def: SystemColumnDef, idx: number): HTMLTableRowElement {
     '<td class="col-order">' + (idx + 1) + '</td>' +
     '<td><input type="text" class="f-name" value="' + escapeHtml(def.name) + '"></td>' +
     '<td><input type="text" class="f-comment" value="' + escapeHtml(def.comment || '') + '"></td>' +
-    '<td><input type="text" class="f-type" list="col-type-datalist" value="' + escapeHtml(def.dataType) + '"></td>' +
+    '<td><input type="text" class="f-logical-type" list="logical-type-datalist" value="' + escapeHtml(logicalDataType(def)) + '"></td>' +
+    '<td><input type="text" class="f-physical-type" list="physical-type-datalist" value="' + escapeHtml(physicalDataType(def)) + '"></td>' +
     '<td><input type="text" class="f-default" value="' + escapeHtml(def.defaultValue || '') + '"></td>' +
     '<td><button type="button" class="btn-icon btn-del-sys" title="Remove">✕</button></td>';
 
   (tr.querySelector('.f-name') as HTMLInputElement).addEventListener('input', (e) => { def.name = (e.target as HTMLInputElement).value; });
   (tr.querySelector('.f-comment') as HTMLInputElement).addEventListener('input', (e) => { def.comment = (e.target as HTMLInputElement).value; });
-  (tr.querySelector('.f-type') as HTMLInputElement).addEventListener('input', (e) => { def.dataType = (e.target as HTMLInputElement).value; });
+  (tr.querySelector('.f-logical-type') as HTMLInputElement).addEventListener('input', (e) => { setLogicalDataType(def, (e.target as HTMLInputElement).value); });
+  (tr.querySelector('.f-physical-type') as HTMLInputElement).addEventListener('input', (e) => { setPhysicalDataType(def, (e.target as HTMLInputElement).value); });
   (tr.querySelector('.f-default') as HTMLInputElement).addEventListener('input', (e) => { def.defaultValue = (e.target as HTMLInputElement).value; });
   (tr.querySelector('.btn-del-sys') as HTMLButtonElement).addEventListener('click', () => {
     draft = draft.filter((d) => d !== def);
@@ -184,7 +193,7 @@ function onGridPaste(e: ClipboardEvent): void {
       const c = anchor.col + cOffset;
       if (c >= CELL_FIELDS.length) return;
       maxCol = Math.max(maxCol, c);
-      (def as unknown as Record<string, string>)[CELL_FIELDS[c]] = val;
+      setDefField(def, CELL_FIELDS[c], val);
     });
   });
 
@@ -203,7 +212,7 @@ function onModalKeydown(e: KeyboardEvent): void {
     for (let r = b.r0; r <= b.r1; r++) {
       const def = draft[r];
       if (!def) continue;
-      for (let c = b.c0; c <= b.c1; c++) (def as unknown as Record<string, string>)[CELL_FIELDS[c]] = '';
+      for (let c = b.c0; c <= b.c1; c++) setDefField(def, CELL_FIELDS[c], '');
     }
     renderGrid();
     refreshSelectionHighlight();
@@ -230,9 +239,10 @@ function open(): void {
   const body = document.createElement('div');
   body.innerHTML =
     '<p class="hint">System columns are appended to every table (shown in yellow) - e.g. CREATED_BY, CREATED_DATE.</p>' +
-    '<datalist id="col-type-datalist">' + dataTypeSuggestions(state.data.designMode).map((t) => '<option value="' + t + '">').join('') + '</datalist>' +
+    '<datalist id="logical-type-datalist">' + dataTypeSuggestions('logical').map((t) => '<option value="' + t + '">').join('') + '</datalist>' +
+    '<datalist id="physical-type-datalist">' + dataTypeSuggestions('physical').map((t) => '<option value="' + t + '">').join('') + '</datalist>' +
     '<table class="col-grid">' +
-      '<thead><tr><th></th><th>#</th><th>Name</th><th>Comment</th><th>Data type</th><th>Default</th><th></th></tr></thead>' +
+      '<thead><tr><th></th><th>#</th><th>Name</th><th>Comment</th><th>Logical type</th><th>Physical type</th><th>Default</th><th></th></tr></thead>' +
       '<tbody></tbody>' +
     '</table>' +
     '<button type="button" class="btn btn-add-sys">+ Add system column</button>';
@@ -250,7 +260,7 @@ function open(): void {
 
   modal.open({
     title: 'System columns',
-    width: '640px',
+    width: '840px',
     body,
     onClose: cleanupGridListeners,
     actions: [

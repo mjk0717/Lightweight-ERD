@@ -2,6 +2,7 @@ import { state } from './state';
 import { modal } from './modal';
 import { escapeHtml, copyToClipboard } from './util';
 import { DbVendor } from './ddlExtractSql';
+import { physicalDataType } from './columnTypes';
 import { Column, Entity, Relation } from './types';
 
 function escapeSqlString(s: string): string {
@@ -84,7 +85,7 @@ function generateDdl(entity: Entity, opts?: DdlGenOptions): string {
 
   const colLines = entity.columns.map((c) => {
     const def = (c.defaultValue || '').trim();
-    let line = '  ' + quoteIdentifier(c.name, vendor) + ' ' + c.dataType +
+    let line = '  ' + quoteIdentifier(c.name, vendor) + ' ' + physicalDataType(c) +
       (def ? ' DEFAULT ' + def : '') + (c.nullable ? '' : ' NOT NULL');
     if (isMySql && c.comment) line += ' COMMENT \'' + escapeSqlString(c.comment) + '\'';
     return line;

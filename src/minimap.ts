@@ -101,11 +101,17 @@ function onMouseDown(e: MouseEvent): void {
   document.addEventListener('mouseup', up);
 }
 
+function onClick(e: MouseEvent): void {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
 function init(): void {
   containerEl = document.getElementById('minimap')!;
   canvasEl = containerEl.querySelector('canvas') as HTMLCanvasElement;
   ctx = canvasEl.getContext('2d')!;
   canvasEl.addEventListener('mousedown', onMouseDown);
+  containerEl.addEventListener('click', onClick);
   state.on('change', draw);
   state.on('move', draw);
   viewport.onViewChange(draw);

@@ -21,7 +21,7 @@ function splitStatements(text: string): string[] {
 
 function stripQuotes(name: string): string {
   if (!name) return name;
-  return name.replace(/^"|"$/g, '');
+  return name.replace(/^["`]|["`]$/g, '');
 }
 
 function parseQualifiedName(raw: string): string {
@@ -96,13 +96,13 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
     if (!c) return;
 
     let cm: RegExpMatchArray | null;
-    if ((cm = c.match(/^CONSTRAINT\s+(?:"[^"]+"|[\w$#]+)\s+PRIMARY\s+KEY\s*\(([^)]*)\)/i)) ||
+    if ((cm = c.match(/^CONSTRAINT\s+(?:"[^"]+"|`[^`]+`|[\w$#]+)\s+PRIMARY\s+KEY\s*\(([^)]*)\)/i)) ||
         (cm = c.match(/^PRIMARY\s+KEY\s*\(([^)]*)\)/i))) {
       parseColumnList(cm[1]).forEach((n) => pkColumnNames.push(n.toUpperCase()));
       return;
     }
 
-    if ((cm = c.match(/^CONSTRAINT\s+("[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
+    if ((cm = c.match(/^CONSTRAINT\s+("[^"]+"|`[^`]+`|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
       inlineFks.push({
         table: tableName,
         name: stripQuotes(cm[1]),
@@ -112,7 +112,7 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
       });
       return;
     }
-    if ((cm = c.match(/^FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
+    if ((cm = c.match(/^FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s*\(([^)]*)\)/i))) {
       inlineFks.push({
         table: tableName,
         columns: parseColumnList(cm[1]),
@@ -122,15 +122,15 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
       return;
     }
 
-    if (/^CONSTRAINT\s+(?:"[^"]+"|[\w$#]+)\s+(UNIQUE|CHECK)\b/i.test(c) || /^(UNIQUE|CHECK)\b/i.test(c)) {
+    if (/^CONSTRAINT\s+(?:"[^"]+"|`[^`]+`|[\w$#]+)\s+(UNIQUE|CHECK)\b/i.test(c) || /^(UNIQUE|CHECK)\b/i.test(c)) {
       return; // dropped: not relevant to ERD structure
     }
 
     // column definition: NAME TYPE(args) [DEFAULT ...] [NOT NULL] [ENABLE|DISABLE] ...
-    const colMatch = c.match(/^"?([\w$#]+)"?\s+([A-Za-z][\w$#]*(?:\s*\([^)]*\))?)/);
+    const colMatch = c.match(/^(?:"([^"]+)"|`([^`]+)`|([\w$#]+))\s+([A-Za-z][\w$#]*(?:\s*\([^)]*\))?)/);
     if (colMatch) {
-      const name = colMatch[1];
-      const dataType = colMatch[2].replace(/\s+/g, '');
+      const name = colMatch[1] || colMatch[2] || colMatch[3];
+      const dataType = colMatch[4].replace(/\s+/g, '');
       const nullable = !/NOT\s+NULL/i.test(c);
       // Best-effort DEFAULT capture: everything after DEFAULT up to NOT NULL /
       // ENABLE/DISABLE / a trailing constraint keyword / end of clause.
@@ -140,6 +140,8 @@ function parseClauseList(clauses: string[], tableName: string): ClauseListResult
         id: nextId('col'),
         name,
         dataType,
+        logicalDataType: dataType,
+        physicalDataType: dataType,
         comment: '',
         pk: false,
         fk: false,
@@ -160,7 +162,7 @@ interface CreateTableResult {
 }
 
 function parseCreateTable(stmt: string, tables: DdlTable[]): CreateTableResult | null {
-  const m = stmt.match(/^CREATE\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(/i);
+  const m = stmt.match(/^CREATE\s+TABLE\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s*\(/i);
   if (!m) return null;
   const tableName = parseQualifiedName(m[1]);
   const openIdx = stmt.indexOf('(', m[0].length - 1);
@@ -188,19 +190,19 @@ function parseCreateTable(stmt: string, tables: DdlTable[]): CreateTableResult |
 }
 
 function parseCommentOnTable(stmt: string): { table: string; comment: string } | null {
-  const m = stmt.match(/^COMMENT\s+ON\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+IS\s+'([\s\S]*)'$/i);
+  const m = stmt.match(/^COMMENT\s+ON\s+TABLE\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s+IS\s+'([\s\S]*)'$/i);
   if (!m) return null;
   return { table: parseQualifiedName(m[1]), comment: m[2].replace(/''/g, "'") };
 }
 
 function parseCommentOnColumn(stmt: string): { table: string; column: string; comment: string } | null {
-  const m = stmt.match(/^COMMENT\s+ON\s+COLUMN\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\.("?[\w$#]+"?)\s+IS\s+'([\s\S]*)'$/i);
+  const m = stmt.match(/^COMMENT\s+ON\s+COLUMN\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\.("[^"]+"|`[^`]+`|[\w$#]+)\s+IS\s+'([\s\S]*)'$/i);
   if (!m) return null;
   return { table: parseQualifiedName(m[1]), column: stripQuotes(m[2]), comment: m[3].replace(/''/g, "'") };
 }
 
 function parseAlterTableFk(stmt: string): DdlFkCandidate | null {
-  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+ADD\s+CONSTRAINT\s+("[^"]+"|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s*\(([^)]*)\)/i);
+  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s+ADD\s+CONSTRAINT\s+("[^"]+"|`[^`]+`|[\w$#]+)\s+FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s*\(([^)]*)\)/i);
   if (!m) return null;
   return {
     table: parseQualifiedName(m[1]),
@@ -224,7 +226,7 @@ interface AlterTableAddResult {
 // The parenthesized, comma-separated list is the same clause shape as
 // CREATE TABLE's body, so it's parsed with the same parseClauseList().
 function parseAlterTableAddParen(stmt: string): AlterTableAddResult | null {
-  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?)\s+ADD\s*\(/i);
+  const m = stmt.match(/^ALTER\s+TABLE\s+((?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?)\s+ADD\s*\(/i);
   if (!m) return null;
   const tableName = parseQualifiedName(m[1]);
   const openIdx = stmt.indexOf('(', m[0].length - 1);
@@ -271,7 +273,7 @@ export function parse(rawText: string, existingTableNames: string[] = []): DdlPa
       if (c) columnComments.push(c);
       return;
     }
-    if (/^ALTER\s+TABLE\b\s*(?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?\s+ADD\s*\(/i.test(stmt)) {
+    if (/^ALTER\s+TABLE\b\s*(?:"[^"]+"|`[^`]+`|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[\w$#]+))?\s+ADD\s*\(/i.test(stmt)) {
       const res = parseAlterTableAddParen(stmt);
       if (res) {
         const t = tables.find((t) => t.name.toUpperCase() === res.table.toUpperCase());

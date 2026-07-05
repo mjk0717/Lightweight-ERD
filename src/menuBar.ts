@@ -5,6 +5,7 @@ import { exportWizard } from './exportWizard';
 import { modalSystemColumns } from './modalSystemColumns';
 import { viewport } from './viewport';
 import { history } from './history';
+import { appTheme } from './appTheme';
 
 // VS Code-style top menu bar: a row of menu titles that open dropdowns
 // (Project / Edit / View) plus a couple of direct-action titles that fire
@@ -58,13 +59,14 @@ const MENUS: MenuEntry[] = [
       { separator: true },
       { label: 'Reset view', onClick: () => viewport.resetView() },
       { label: 'Minimap', checked: () => state.data.minimapVisible, onClick: () => state.toggleMinimap() },
+      { label: 'Dark mode', checked: () => appTheme.isDark(), onClick: () => appTheme.toggle() },
       { separator: true },
       { label: 'Curved lines', checked: () => state.data.lineStyle === 'curved', onClick: () => state.setLineStyle('curved') },
       { label: 'Angular lines', checked: () => state.data.lineStyle === 'angular', onClick: () => state.setLineStyle('angular') }
     ]
   },
-  { title: 'Reverse Engineering', onClick: () => ddlImport.open() },
-  { title: 'Forward Engineering', onClick: () => exportWizard.open() }
+  { title: 'Import', onClick: () => ddlImport.open() },
+  { title: 'Export', onClick: () => exportWizard.open() }
 ];
 
 function closeProject(): void {

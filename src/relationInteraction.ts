@@ -6,6 +6,7 @@ import { relationRenderer } from './relationRenderer';
 import { modalRelation } from './modalRelation';
 import { modal } from './modal';
 import { theme } from './theme';
+import { copyDataTypes } from './columnTypes';
 import { Cardinality, Column, FkPlan, Relation, RelationColumnPair } from './types';
 import { DEFAULT_SOURCE_CARDINALITY, DEFAULT_TARGET_CARDINALITY } from './cardinality';
 
@@ -46,6 +47,7 @@ function findOrCreateFkColumn(sourceEntityId: string, targetColumn: Column, targ
     id: nextId('col'), name: plan.name, dataType: targetColumn.dataType,
     comment: '', pk: true, fk: true, nullable: false, isSystem: false, systemColId: null
   };
+  copyDataTypes(targetColumn, newCol);
   state.addColumn(sourceEntityId, newCol);
   return newCol.id;
 }

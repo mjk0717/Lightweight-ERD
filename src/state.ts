@@ -1,5 +1,6 @@
 import { nextId, debounce } from './util';
 import { AppData, Entity, Column, Relation, SystemColumnDef, SerializedState, Selection, SelectionType, DesignMode, LineStyle } from './types';
+import { copyDataTypes, normalizeDataTypes } from './columnTypes';
 
 type EventName = 'change' | 'move' | 'select';
 type Listener = () => void;
@@ -59,8 +60,9 @@ function load(): boolean {
     if (!raw) return false;
     const parsed = JSON.parse(raw) as Partial<SerializedState>;
     data.entities = parsed.entities || [];
+    data.entities.forEach((entity) => entity.columns.forEach(normalizeDataTypes));
     data.relations = parsed.relations || [];
-    data.systemColumns = parsed.systemColumns || [];
+    data.systemColumns = (parsed.systemColumns || []).map(normalizeDataTypes);
     data.view = parsed.view || { scale: 1, x: 0, y: 0 };
     data.designMode = parsed.designMode || 'logical';
     data.lineStyle = parsed.lineStyle || 'curved';
@@ -73,8 +75,9 @@ function load(): boolean {
 
 function replaceAll(next: Partial<SerializedState>): void {
   data.entities = next.entities || [];
+  data.entities.forEach((entity) => entity.columns.forEach(normalizeDataTypes));
   data.relations = next.relations || [];
-  data.systemColumns = next.systemColumns || [];
+  data.systemColumns = (next.systemColumns || []).map(normalizeDataTypes);
   data.view = next.view || { scale: 1, x: 0, y: 0 };
   data.designMode = next.designMode || 'logical';
   data.lineStyle = next.lineStyle || 'curved';
@@ -111,6 +114,7 @@ function getEntity(id: string): Entity | undefined {
 }
 
 function addEntity(entity: Entity): Entity {
+  entity.columns.forEach(normalizeDataTypes);
   data.entities.push(entity);
   notify('change');
   return entity;
@@ -154,6 +158,7 @@ function getColumn(entityId: string, colId: string): Column | null {
 function addColumn(entityId: string, column: Column): Column | null {
   const e = getEntity(entityId);
   if (!e) return null;
+  normalizeDataTypes(column);
   if (column.isSystem) {
     e.columns.push(column);
   } else if (column.pk) {
@@ -238,15 +243,18 @@ function relationExistsWithPairs(pairs: { sourceColumnId: string; targetColumnId
 // ---- system columns ----
 function applySystemColumnsToEntity(e: Entity): void {
   data.systemColumns.forEach((def) => {
+    normalizeDataTypes(def);
     const col = e.columns.find((c) => c.systemColId === def.id);
     if (col) {
       col.name = def.name;
-      col.dataType = def.dataType;
+      copyDataTypes(def, col);
       col.comment = def.comment;
       col.defaultValue = def.defaultValue || '';
     } else {
       e.columns.push({
         id: nextId('col'), name: def.name, dataType: def.dataType, comment: def.comment,
+        logicalDataType: def.logicalDataType || def.dataType,
+        physicalDataType: def.physicalDataType || def.dataType,
         defaultValue: def.defaultValue || '',
         pk: false, fk: false, nullable: true, isSystem: true, systemColId: def.id
       });
@@ -259,6 +267,7 @@ function setSystemColumns(list: SystemColumnDef[]): void {
   const nextIds: string[] = [];
   list.forEach((def) => {
     if (!def.id) def.id = nextId('sysdef');
+    normalizeDataTypes(def);
     nextIds.push(def.id);
   });
   prevIds.forEach((id) => {

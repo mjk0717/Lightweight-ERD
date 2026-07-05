@@ -3,13 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lightweight-ERD</title>
+<title>Light-ERD</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header id="toolbar">
-    <h1>Lightweight-ERD</h1>
+    <h1>Light-ERD</h1>
     <nav id="menu-bar"></nav>
+    <div class="global-search">
+      <svg viewBox="0 0 24 24" class="global-search-icon" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="M20 20l-3.5-3.5"></path>
+      </svg>
+      <input type="search" id="global-search-input" placeholder="Search" autocomplete="off" aria-label="Search entities and relations">
+    </div>
     <div class="toolbar-spacer"></div>
     <div class="mode-switch">
       <span class="mode-label">Logical</span>
@@ -19,6 +26,7 @@
       </label>
       <span class="mode-label">Physical</span>
     </div>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch to dark mode" title="Dark mode"></button>
   </header>
 
   <main id="canvas-viewport">

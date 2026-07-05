@@ -6,6 +6,8 @@ import { modalRelation } from './modalRelation';
 import { contextMenu } from './contextMenu';
 import { viewport } from './viewport';
 import { sourceCardinalityOf, targetCardinalityOf } from './cardinality';
+import { appTheme } from './appTheme';
+import { search } from './search';
 import { Anchor, AnchorSide, Box, Cardinality, Point, Relation } from './types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -424,7 +426,12 @@ function displayRelationName(relation: Relation): string {
   return relation.name;
 }
 
-function crowFoot(point: Point, side: AnchorSide): SVGGElement {
+function isConnectedToSelectedEntity(relation: Relation): boolean {
+  return state.data.selectedEntityIds.indexOf(relation.sourceEntityId) !== -1 ||
+    state.data.selectedEntityIds.indexOf(relation.targetEntityId) !== -1;
+}
+
+function crowFoot(point: Point, side: AnchorSide, stroke: string, strokeWidth: number): SVGGElement {
   // Prongs splay out right at the entity edge and converge to a single
   // point further along the line - like a foot planted against the box.
   const dir = sideDir(side);
@@ -434,58 +441,60 @@ function crowFoot(point: Point, side: AnchorSide): SVGGElement {
   [-8, 8].forEach((off) => {
     g.appendChild(el('line', {
       x1: point.x + perp.x * off, y1: point.y + perp.y * off, x2: forward.x, y2: forward.y,
-      stroke: theme.colors.relationStroke, 'stroke-width': 1.5
+      stroke, 'stroke-width': strokeWidth
     }));
   });
   return g;
 }
 
-function bar(point: Point, side: AnchorSide, distance: number): SVGLineElement {
+function bar(point: Point, side: AnchorSide, distance: number, stroke: string, strokeWidth: number): SVGLineElement {
   const dir = sideDir(side);
   const perp = { x: -dir.y, y: dir.x };
   const cx = point.x + dir.x * distance, cy = point.y + dir.y * distance;
   return el('line', {
     x1: cx - perp.x * 8, y1: cy - perp.y * 8, x2: cx + perp.x * 8, y2: cy + perp.y * 8,
-    stroke: theme.colors.relationStroke, 'stroke-width': 1.5
+    stroke, 'stroke-width': strokeWidth
   });
 }
 
-function circle(point: Point, side: AnchorSide, distance: number): SVGCircleElement {
+function circle(point: Point, side: AnchorSide, distance: number, stroke: string, strokeWidth: number): SVGCircleElement {
   const dir = sideDir(side);
   return el('circle', {
     cx: point.x + dir.x * distance, cy: point.y + dir.y * distance, r: 6,
-    fill: theme.colors.bodyBg, stroke: theme.colors.relationStroke, 'stroke-width': 1.5
+    fill: theme.colors.bodyBg, stroke, 'stroke-width': strokeWidth
   });
 }
 
 // Crow's foot notation with optionality: the crow's foot (or bars) sit right
 // at the entity edge; an outer bar/circle further along the line marks
 // mandatory/optional. "many" alone (no outer mark) is also a valid choice.
-function cardinalityMarker(point: Point, side: AnchorSide, cardinality: Cardinality): SVGGElement {
+function cardinalityMarker(point: Point, side: AnchorSide, cardinality: Cardinality, highlighted: boolean, identifying: boolean): SVGGElement {
   const g = el('g', { class: 'cardinality-marker' });
+  const stroke = appTheme.relationStroke(identifying);
+  const strokeWidth = highlighted ? 3 : 2.5;
   switch (cardinality) {
     case 'one':
-      g.appendChild(bar(point, side, 9));
-      g.appendChild(bar(point, side, 15));
+      g.appendChild(bar(point, side, 9, stroke, strokeWidth));
+      g.appendChild(bar(point, side, 15, stroke, strokeWidth));
       break;
     case 'zero-or-one':
-      g.appendChild(bar(point, side, 9));
-      g.appendChild(circle(point, side, 17));
+      g.appendChild(bar(point, side, 9, stroke, strokeWidth));
+      g.appendChild(circle(point, side, 17, stroke, strokeWidth));
       break;
     case 'zero-or-many':
       // Crow's foot converges at 12; circle (radius 4) centered at 16 so its
       // near edge touches the foot's tip instead of floating past it.
-      g.appendChild(crowFoot(point, side));
-      g.appendChild(circle(point, side, 16));
+      g.appendChild(crowFoot(point, side, stroke, strokeWidth));
+      g.appendChild(circle(point, side, 16, stroke, strokeWidth));
       break;
     case 'one-or-many':
       // Bar sits right at the foot's convergence point, capping it.
-      g.appendChild(crowFoot(point, side));
-      g.appendChild(bar(point, side, 12));
+      g.appendChild(crowFoot(point, side, stroke, strokeWidth));
+      g.appendChild(bar(point, side, 12, stroke, strokeWidth));
       break;
     case 'many':
     default:
-      g.appendChild(crowFoot(point, side));
+      g.appendChild(crowFoot(point, side, stroke, strokeWidth));
       break;
   }
   return g;
@@ -493,6 +502,7 @@ function cardinalityMarker(point: Point, side: AnchorSide, cardinality: Cardinal
 
 function buildRelationNode(relation: Relation): SVGGElement {
   const g = el('g', { class: 'relation', 'data-relation-id': relation.id });
+  g.appendChild(el('path', { class: 'relation-halo' }));
   g.appendChild(el('path', { class: 'relation-hit' }));
   g.appendChild(el('path', { class: 'relation-line' }));
   g.appendChild(el('g', { class: 'relation-endpoints' }));
@@ -510,8 +520,8 @@ function buildRelationNode(relation: Relation): SVGGElement {
 // relation's marker elements and re-measured every label, even for
 // relations nowhere near the moved entity. With the signature check, a
 // render only touches the nodes whose geometry or styling actually changed.
-function relationNodeSignature(relation: Relation, pathD: string, isSelected: boolean, identifying: boolean): string {
-  return pathD + '|' + isSelected + '|' + identifying + '|' + displayRelationName(relation) + '|' +
+function relationNodeSignature(relation: Relation, pathD: string, isSelected: boolean, isHighlighted: boolean, identifying: boolean): string {
+  return pathD + '|' + isSelected + '|' + isHighlighted + '|' + identifying + '|' + appTheme.isDark() + '|' + displayRelationName(relation) + '|' +
     sourceCardinalityOf(relation) + '|' + targetCardinalityOf(relation);
 }
 
@@ -535,19 +545,35 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
 
   const selected = state.data.selected;
   const isSelected = !!(selected && selected.type === 'relation' && selected.id === relation.id);
+  const isHighlighted = isSelected || isConnectedToSelectedEntity(relation);
   const identifying = isIdentifying(relation);
+  node.classList.toggle('search-dimmed', search.isActive() && !search.matchesRelation(relation));
 
-  const sig = relationNodeSignature(relation, path.d, isSelected, identifying);
+  const sig = relationNodeSignature(relation, path.d, isSelected, isHighlighted, identifying);
   if (node.dataset.sig === sig) return;
   node.dataset.sig = sig;
+
+  const halo = node.querySelector('.relation-halo') as SVGPathElement;
+  halo.setAttribute('d', path.d);
+  halo.setAttribute('fill', 'none');
+  halo.setAttribute('stroke', appTheme.relationHighlightHalo());
+  halo.setAttribute('stroke-width', '8');
+  halo.setAttribute('stroke-opacity', isHighlighted ? '0.34' : '0');
+  halo.setAttribute('stroke-linecap', 'round');
+  halo.setAttribute('stroke-linejoin', 'round');
 
   const line = node.querySelector('.relation-line') as SVGPathElement;
   line.setAttribute('d', path.d);
   line.setAttribute('fill', 'none');
-  line.setAttribute('stroke', isSelected ? theme.colors.relationStrokeHover : theme.colors.relationStroke);
-  line.setAttribute('stroke-width', isSelected ? '2.5' : '1.5');
-  if (identifying) line.removeAttribute('stroke-dasharray');
-  else line.setAttribute('stroke-dasharray', '6,4');
+  line.setAttribute('stroke', appTheme.relationStroke(identifying));
+  line.setAttribute('stroke-width', isHighlighted ? '3.5' : '2.5');
+  if (identifying) {
+    line.removeAttribute('stroke-dasharray');
+    halo.removeAttribute('stroke-dasharray');
+  } else {
+    line.setAttribute('stroke-dasharray', '6,4');
+    halo.setAttribute('stroke-dasharray', '6,4');
+  }
 
   const hit = node.querySelector('.relation-hit') as SVGPathElement;
   hit.setAttribute('d', path.d);
@@ -561,8 +587,8 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
   // MARKER_CLEARANCE -> curve -> MARKER_CLEARANCE -> marker -> edge.
   const endpoints = node.querySelector('.relation-endpoints') as SVGGElement;
   endpoints.innerHTML = '';
-  endpoints.appendChild(cardinalityMarker(geom.aPt, geom.aSide, sourceCardinalityOf(relation)));
-  endpoints.appendChild(cardinalityMarker(geom.bPt, geom.bSide, targetCardinalityOf(relation)));
+  endpoints.appendChild(cardinalityMarker(geom.aPt, geom.aSide, sourceCardinalityOf(relation), isHighlighted, identifying));
+  endpoints.appendChild(cardinalityMarker(geom.bPt, geom.bSide, targetCardinalityOf(relation), isHighlighted, identifying));
 
   // Endpoint drag handles - only shown once the relation is selected, so
   // they don't clutter the diagram; dragging one re-points that end to a
@@ -574,11 +600,11 @@ function updateRelationNode(node: SVGGElement, relation: Relation): void {
     const targetHandlePt = handleAnchor(geom.bPt, geom.bSide);
     handles.appendChild(el('circle', {
       class: 'relation-handle', 'data-end': 'source', 'data-side': geom.aSide, cx: sourceHandlePt.x, cy: sourceHandlePt.y, r: 6,
-      fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
+      fill: appTheme.relationStrokeHover(theme.colors.relationStrokeHover), stroke: '#ffffff', 'stroke-width': 2
     }));
     handles.appendChild(el('circle', {
       class: 'relation-handle', 'data-end': 'target', 'data-side': geom.bSide, cx: targetHandlePt.x, cy: targetHandlePt.y, r: 6,
-      fill: theme.colors.relationStrokeHover, stroke: '#ffffff', 'stroke-width': 2
+      fill: appTheme.relationStrokeHover(theme.colors.relationStrokeHover), stroke: '#ffffff', 'stroke-width': 2
     }));
   }
 
@@ -841,7 +867,7 @@ function buildHopPath(points: Point[], crossings: Crossing[]): string {
 const hoppedIds = new Set<string>();
 
 function applyLineCrossingHops(): void {
-  const entries: (CrossingEntry & { line: SVGPathElement; baseD: string })[] = [];
+  const entries: (CrossingEntry & { line: SVGPathElement; halo: SVGPathElement; baseD: string })[] = [];
   nodeMap.forEach((node, id) => {
     if (node.style.display === 'none') return;
     const relation = state.getRelation(id);
@@ -850,17 +876,21 @@ function applyLineCrossingHops(): void {
     if (!points || points.length < 2) return;
     const hit = node.querySelector('.relation-hit') as SVGPathElement;
     const line = node.querySelector('.relation-line') as SVGPathElement;
-    entries.push({ id, points, line, baseD: hit.getAttribute('d') || '', identifying: isIdentifying(relation) });
+    const halo = node.querySelector('.relation-halo') as SVGPathElement;
+    entries.push({ id, points, line, halo, baseD: hit.getAttribute('d') || '', identifying: isIdentifying(relation) });
   });
 
   const hopsByRelation = computeLineCrossingHops(entries);
   entries.forEach((entry) => {
     const crossings = hopsByRelation.get(entry.id);
     if (crossings && crossings.length) {
-      entry.line.setAttribute('d', buildHopPath(entry.points, crossings));
+      const d = buildHopPath(entry.points, crossings);
+      entry.line.setAttribute('d', d);
+      entry.halo.setAttribute('d', d);
       hoppedIds.add(entry.id);
     } else if (hoppedIds.has(entry.id)) {
       entry.line.setAttribute('d', entry.baseD);
+      entry.halo.setAttribute('d', entry.baseD);
       hoppedIds.delete(entry.id);
     }
   });
@@ -889,7 +919,7 @@ function setTempLine(fromPt: Point, fromSide: AnchorSide, toPt: Point, toSide: A
   tempGroup.style.display = '';
   tempGroup.innerHTML = '';
   const path = linePath(fromPt, fromSide, toPt, toSide, isSelf);
-  const p = el('path', { d: path.d, fill: 'none', stroke: theme.colors.relationStrokeHover, 'stroke-width': 2, 'stroke-dasharray': '5,4' });
+  const p = el('path', { d: path.d, fill: 'none', stroke: appTheme.relationStrokeHover(theme.colors.relationStrokeHover), 'stroke-width': 3, 'stroke-dasharray': '5,4' });
   tempGroup.appendChild(p);
 }
 
@@ -981,6 +1011,7 @@ function init(svg: SVGSVGElement): void {
   state.on('change', render);
   state.on('move', render);
   state.on('select', render);
+  search.onChange(render);
   render();
 }
 

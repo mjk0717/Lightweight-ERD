@@ -9,6 +9,7 @@ import { menuBar } from './menuBar';
 import { minimap } from './minimap';
 import { contextMenu } from './contextMenu';
 import { history } from './history';
+import { search } from './search';
 import { defaultDiagram } from './defaultDiagram';
 import { closest, nextId } from './util';
 import { Entity } from './types';
@@ -133,6 +134,7 @@ function init(): void {
   toolbar.init();
   menuBar.init();
   minimap.init();
+  search.init();
 
   viewportEl.addEventListener('click', onCanvasBackgroundClick);
   viewportEl.addEventListener('contextmenu', onCanvasBackgroundContextMenu);

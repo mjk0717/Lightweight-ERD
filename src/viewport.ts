@@ -14,6 +14,8 @@ let transformEl: HTMLElement;
 let panning = false;
 let panStart: Point | null = null;
 let viewStart: Point | null = null;
+let movedDuringPan = false;
+let suppressNextClick = false;
 
 // Notified on every camera change (pan/zoom/reset). The minimap subscribes
 // so its viewport rectangle tracks the camera live, without routing camera
@@ -77,6 +79,7 @@ function onPanStart(e: MouseEvent): void {
   panning = true;
   panStart = { x: e.clientX, y: e.clientY };
   viewStart = { x: view().x, y: view().y };
+  movedDuringPan = false;
   viewportEl.classList.add('panning');
   document.addEventListener('mousemove', onPanMove);
   document.addEventListener('mouseup', onPanEnd);
@@ -84,17 +87,26 @@ function onPanStart(e: MouseEvent): void {
 
 function onPanMove(e: MouseEvent): void {
   if (!panning || !panStart || !viewStart) return;
+  if (Math.abs(e.clientX - panStart.x) > 2 || Math.abs(e.clientY - panStart.y) > 2) movedDuringPan = true;
   view().x = viewStart.x + (e.clientX - panStart.x);
   view().y = viewStart.y + (e.clientY - panStart.y);
   applyTransform();
 }
 
 function onPanEnd(): void {
+  suppressNextClick = movedDuringPan;
   panning = false;
   viewportEl.classList.remove('panning');
   document.removeEventListener('mousemove', onPanMove);
   document.removeEventListener('mouseup', onPanEnd);
   state.persist();
+}
+
+function onClickAfterPan(e: MouseEvent): void {
+  if (!suppressNextClick) return;
+  suppressNextClick = false;
+  e.preventDefault();
+  e.stopImmediatePropagation();
 }
 
 // Fits every entity's bounding box into the visible viewport (like "zoom to
@@ -139,6 +151,7 @@ function init(viewport: HTMLElement, transform: HTMLElement): void {
   transformEl = transform;
   viewportEl.addEventListener('wheel', onWheel, { passive: false });
   viewportEl.addEventListener('mousedown', onPanStart);
+  viewportEl.addEventListener('click', onClickAfterPan, true);
   applyTransform();
 }
 

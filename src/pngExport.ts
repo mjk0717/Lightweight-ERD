@@ -8,11 +8,63 @@ import { Anchor, AnchorSide, Box, Cardinality, Column, Entity, Point, Relation }
 const MARGIN = 50;
 const PIXEL_RATIO = 2;
 
-function rowBackground(col: Column, idx: number): string {
-  if (col.isSystem) return theme.colors.systemBg;
-  if (col.pk) return theme.colors.pkBg;
-  if (idx % 2 === 1) return theme.colors.rowAlt;
-  return theme.colors.bodyBg;
+interface PngExportOptions {
+  darkMode?: boolean;
+}
+
+interface ExportColors {
+  background: string;
+  bodyBg: string;
+  border: string;
+  rowAlt: string;
+  pkBg: string;
+  systemBg: string;
+  systemText: string;
+  text: string;
+  subtext: string;
+  relationLabelBg: string;
+  relationIdentifying: string;
+  relationNonIdentifying: string;
+}
+
+function exportColors(options?: PngExportOptions): ExportColors {
+  if (options && options.darkMode) {
+    return {
+      background: '#0b1120',
+      bodyBg: '#111827',
+      border: '#475569',
+      rowAlt: '#172033',
+      pkBg: '#172554',
+      systemBg: '#2f260f',
+      systemText: '#facc15',
+      text: '#dbe4f0',
+      subtext: '#94a3b8',
+      relationLabelBg: '#0f172a',
+      relationIdentifying: '#f87171',
+      relationNonIdentifying: '#94a3b8'
+    };
+  }
+  return {
+    background: '#ffffff',
+    bodyBg: theme.colors.bodyBg,
+    border: theme.colors.border,
+    rowAlt: theme.colors.rowAlt,
+    pkBg: theme.colors.pkBg,
+    systemBg: theme.colors.systemBg,
+    systemText: theme.colors.systemText,
+    text: theme.colors.text,
+    subtext: theme.colors.subtext,
+    relationLabelBg: theme.colors.relationLabelBg,
+    relationIdentifying: '#1d4ed8',
+    relationNonIdentifying: '#64748b'
+  };
+}
+
+function rowBackground(col: Column, idx: number, colors: ExportColors): string {
+  if (col.isSystem) return colors.systemBg;
+  if (col.pk) return colors.pkBg;
+  if (idx % 2 === 1) return colors.rowAlt;
+  return colors.bodyBg;
 }
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number; }
@@ -134,16 +186,16 @@ function drawBar(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, 
   ctx.stroke();
 }
 
-function drawCircle(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, distance: number): void {
+function drawCircle(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, distance: number, colors: ExportColors): void {
   const dir = sideDir(side);
   ctx.beginPath();
   ctx.arc(point.x + dir.x * distance, point.y + dir.y * distance, 6, 0, Math.PI * 2);
-  ctx.fillStyle = theme.colors.bodyBg;
+  ctx.fillStyle = colors.bodyBg;
   ctx.fill();
   ctx.stroke();
 }
 
-function drawCardinalityMarker(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, cardinality: Cardinality): void {
+function drawCardinalityMarker(ctx: CanvasRenderingContext2D, point: Point, side: AnchorSide, cardinality: Cardinality, colors: ExportColors): void {
   switch (cardinality) {
     case 'one':
       drawBar(ctx, point, side, 9);
@@ -151,13 +203,13 @@ function drawCardinalityMarker(ctx: CanvasRenderingContext2D, point: Point, side
       break;
     case 'zero-or-one':
       drawBar(ctx, point, side, 9);
-      drawCircle(ctx, point, side, 17);
+      drawCircle(ctx, point, side, 17, colors);
       break;
     case 'zero-or-many':
       // Crow's foot converges at 12; circle (radius 4) centered at 16 so its
       // near edge touches the foot's tip instead of floating past it.
       drawCrowFoot(ctx, point, side);
-      drawCircle(ctx, point, side, 16);
+      drawCircle(ctx, point, side, 16, colors);
       break;
     case 'one-or-many':
       // Bar sits right at the foot's convergence point, capping it.
@@ -180,7 +232,7 @@ function isIdentifying(relation: Relation): boolean {
   });
 }
 
-function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
+function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation, colors: ExportColors): void {
   const aBox = entityRenderer.getEntityBox(relation.sourceEntityId);
   const bBox = entityRenderer.getEntityBox(relation.targetEntityId);
   if (!aBox || !bBox) return;
@@ -198,9 +250,10 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
   const dirA = sideDir(geom.aSide), dirB = sideDir(geom.bSide);
   const dist = Math.max(Math.hypot(markerB.x - markerA.x, markerB.y - markerA.y) * 0.5, 50);
 
-  ctx.strokeStyle = theme.colors.relationStroke;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash(isIdentifying(relation) ? [] : [6, 4]);
+  const identifying = isIdentifying(relation);
+  ctx.strokeStyle = identifying ? colors.relationIdentifying : colors.relationNonIdentifying;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash(identifying ? [] : [6, 4]);
   ctx.beginPath();
   ctx.moveTo(geom.aPt.x, geom.aPt.y);
   ctx.lineTo(markerA.x, markerA.y);
@@ -335,23 +388,23 @@ function drawRelation(ctx: CanvasRenderingContext2D, relation: Relation): void {
 
   // Markers sit right at the entity edge; markerA/markerB (used above for
   // the curve's bend point) is what reserves the clearance past the marker.
-  drawCardinalityMarker(ctx, geom.aPt, geom.aSide, sourceCardinalityOf(relation));
-  drawCardinalityMarker(ctx, geom.bPt, geom.bSide, targetCardinalityOf(relation));
+  drawCardinalityMarker(ctx, geom.aPt, geom.aSide, sourceCardinalityOf(relation), colors);
+  drawCardinalityMarker(ctx, geom.bPt, geom.bSide, targetCardinalityOf(relation), colors);
 
   const labelText = state.data.designMode === 'logical' && relation.logicalName ? relation.logicalName : relation.name;
   if (labelText) {
     ctx.font = '11px ' + theme.fontFamily;
     const textWidth = ctx.measureText(labelText).width;
-    ctx.fillStyle = theme.colors.relationLabelBg;
+    ctx.fillStyle = colors.relationLabelBg;
     ctx.fillRect(mid.x - textWidth / 2 - 4, mid.y - 10, textWidth + 8, 16);
-    ctx.fillStyle = theme.colors.text;
+    ctx.fillStyle = colors.text;
     ctx.textAlign = 'center';
     ctx.fillText(labelText, mid.x, mid.y + 2);
     ctx.textAlign = 'left';
   }
 }
 
-function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
+function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity, colors: ExportColors): void {
   const box = entityRenderer.getEntityBox(entity.id)!;
   ctx.fillStyle = entity.headerColor || theme.colors.headerBg;
   ctx.fillRect(box.x, box.y, box.w, theme.headerHeight);
@@ -362,27 +415,27 @@ function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
 
   entity.columns.forEach((col, idx) => {
     const rowY = box.y + theme.headerHeight + idx * theme.rowHeight;
-    ctx.fillStyle = rowBackground(col, idx);
+    ctx.fillStyle = rowBackground(col, idx, colors);
     ctx.fillRect(box.x, rowY, box.w, theme.rowHeight);
 
     const flag = col.isSystem ? 'S' : (col.pk && col.fk ? 'P/F' : (col.pk ? 'PK' : (col.fk ? 'FK' : '')));
     if (flag) {
       ctx.font = 'bold 10px ' + theme.fontFamily;
-      ctx.fillStyle = theme.colors.subtext;
+      ctx.fillStyle = colors.subtext;
       ctx.fillText(flag, box.x + 6, rowY + theme.rowHeight / 2 + 1);
     }
     ctx.font = '12px ' + theme.fontFamily;
-    ctx.fillStyle = col.isSystem ? theme.colors.systemText : theme.colors.text;
+    ctx.fillStyle = col.isSystem ? colors.systemText : colors.text;
     ctx.fillText(entityRenderer.displayColumnName(col), box.x + 30, rowY + theme.rowHeight / 2 + 1, box.w - 100);
 
     ctx.font = '11px ' + theme.fontFamily;
-    ctx.fillStyle = theme.colors.subtext;
+    ctx.fillStyle = colors.subtext;
     ctx.textAlign = 'right';
-    ctx.fillText(col.dataType + (col.nullable ? '' : ' *'), box.x + box.w - 6, rowY + theme.rowHeight / 2 + 1, 90);
+    ctx.fillText(entityRenderer.displayColumnDataType(col) + (col.nullable ? '' : ' *'), box.x + box.w - 6, rowY + theme.rowHeight / 2 + 1, 90);
     ctx.textAlign = 'left';
   });
 
-  ctx.strokeStyle = theme.colors.border;
+  ctx.strokeStyle = colors.border;
   ctx.lineWidth = 1;
   ctx.strokeRect(box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1);
 }
@@ -390,9 +443,10 @@ function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
 // Renders the whole diagram to a PNG data URL (null if there's nothing to
 // draw). Split out from exportPng so the Export wizard can show a preview
 // before the user commits to downloading.
-function renderDataUrl(): string | null {
+function renderDataUrl(options?: PngExportOptions): string | null {
   const b = bounds();
   if (!b) return null;
+  const colors = exportColors(options);
 
   const width = b.maxX - b.minX, height = b.maxY - b.minY;
   const canvas = document.createElement('canvas');
@@ -402,11 +456,11 @@ function renderDataUrl(): string | null {
   ctx.scale(PIXEL_RATIO, PIXEL_RATIO);
   ctx.translate(-b.minX, -b.minY);
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = colors.background;
   ctx.fillRect(b.minX, b.minY, width, height);
 
-  state.data.relations.forEach((r) => drawRelation(ctx, r));
-  state.data.entities.forEach((e) => drawEntity(ctx, e));
+  state.data.relations.forEach((r) => drawRelation(ctx, r, colors));
+  state.data.entities.forEach((e) => drawEntity(ctx, e, colors));
 
   return canvas.toDataURL('image/png');
 }

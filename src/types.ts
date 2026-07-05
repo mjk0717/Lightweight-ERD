@@ -1,7 +1,11 @@
 export interface Column {
   id: string;
   name: string;
+  // Backward-compatible physical type. Older JSON files only have this
+  // field; new edits keep it synchronized with physicalDataType.
   dataType: string;
+  logicalDataType?: string;
+  physicalDataType?: string;
   comment: string;
   pk: boolean;
   fk: boolean;
@@ -64,6 +68,8 @@ export interface SystemColumnDef {
   id: string;
   name: string;
   dataType: string;
+  logicalDataType?: string;
+  physicalDataType?: string;
   comment: string;
   defaultValue?: string;
 }
